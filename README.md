@@ -281,6 +281,13 @@ pnpm install
 pnpm dev               # 主开发命令：构建core/ui并运行web应用
 pnpm dev:web          # 仅运行web应用
 pnpm dev:fresh        # 完整重置并重新启动开发环境
+
+# 4. WebDAV测试服务器（可选）
+# 启动Nextcloud作为WebDAV测试服务器
+docker-compose -f docker-compose.dev.yml up nextcloud -d
+# 访问地址：http://localhost:8090
+# 默认用户名：admin
+# 默认密码：admin123
 ```
 </details>
 

@@ -33,3 +33,25 @@ services:
       - ACCESS_USERNAME=${ACCESS_USERNAME:-admin}
       - ACCESS_PASSWORD=${ACCESS_PASSWORD:-}
 
+  # WebDAV test server using Nextcloud
+  nextcloud:
+    image: nextcloud:latest
+    container_name: prompt-optimizer-webdav-test
+    restart: unless-stopped
+    ports:
+      - "8090:80"
+    environment:
+      - NEXTCLOUD_ADMIN_USER=admin
+      - NEXTCLOUD_ADMIN_PASSWORD=admin123
+      - NEXTCLOUD_TRUSTED_DOMAINS=localhost 127.0.0.1
+      - SQLITE_DATABASE=nextcloud
+    volumes:
+      - ./test-data/nextcloud:/var/www/html
+      - ./test-data/nextcloud-data:/var/www/html/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/status.php"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
