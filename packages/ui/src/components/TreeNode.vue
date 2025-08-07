@@ -9,6 +9,7 @@
       class="tree-node-content"
       @click="handleClick"
       @dblclick="handleDoubleClick"
+      @contextmenu.prevent="handleContextMenu"
       :title="node.path"
       :aria-expanded="node.type === 'folder' ? isExpanded : undefined"
       :aria-selected="isSelected"
@@ -70,6 +71,7 @@
         @select="$emit('select', $event)"
         @toggle="$emit('toggle', $event)"
         @open="$emit('open', $event)"
+        @contextmenu="$emit('contextmenu', $event)"
       />
     </div>
   </div>
@@ -93,6 +95,7 @@ const emit = defineEmits<{
   'select': [nodeId: string]
   'toggle': [nodeId: string]
   'open': [nodeId: string]
+  'contextmenu': [event: MouseEvent, node: TreeNodeType]
 }>()
 
 // Computed
@@ -132,6 +135,11 @@ function handleDoubleClick() {
 
 function toggleExpand() {
   emit('toggle', props.node.id)
+}
+
+function handleContextMenu(event: MouseEvent) {
+  emit('select', props.node.id)
+  emit('contextmenu', event, props.node)
 }
 </script>
 

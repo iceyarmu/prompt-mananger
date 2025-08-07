@@ -91,6 +91,7 @@
                   @select="selectNode"
                   @toggle="toggleNode"
                   @open="openFile"
+                  @contextmenu="handleContextMenu"
                 />
               </div>
             </div>
@@ -109,23 +110,58 @@
             @select="selectNode"
             @toggle="toggleNode"
             @open="openFile"
+            @contextmenu="handleContextMenu"
           />
         </template>
       </div>
     </div>
+    
+    <!-- Context Menu -->
+    <ContextMenu
+      :visible="showContextMenu"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :items="contextMenuItems"
+      @close="showContextMenu = false"
+      @item-click="handleContextMenuAction"
+    />
+    
+    <!-- New Item Dialog -->
+    <NewItemDialog
+      v-model="showNewItemDialog"
+      :is-folder="newItemIsFolder"
+      :parent-path="newItemParentPath"
+      :existing-names="getExistingNames(newItemParentPath)"
+      @confirm="handleNewItem"
+    />
+    
+    <!-- Delete Confirm Dialog -->
+    <DeleteConfirmDialog
+      v-model="showDeleteDialog"
+      :item="deleteItem"
+      @confirm="handleDeleteConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, inject, Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useFileTreeStore } from '../composables/useFileTreeStore'
 import { useToast } from '../composables/useToast'
 import { useWebDAVStore } from '../composables/useWebDAVStore'
+import { useFileOperations } from '../composables/useFileOperations'
 import { debounce } from '../utils/debounce'
 import TreeNode from './TreeNode.vue'
+import ContextMenu from './ContextMenu.vue'
+import NewItemDialog from './NewItemDialog.vue'
+import DeleteConfirmDialog from './DeleteConfirmDialog.vue'
+import InlineEdit from './InlineEdit.vue'
+import { validateFilename, sanitizeFilename } from '../utils/validation'
 import type { TreeNode as TreeNodeType } from '../types/fileTree'
+import type { ContextMenuItem } from './ContextMenu.vue'
+import type { AppServices } from '../types/services'
 
 // Props
 const props = defineProps<{
@@ -143,6 +179,8 @@ const { t } = useI18n()
 const fileTreeStore = useFileTreeStore()
 const webdavStore = useWebDAVStore()
 const toast = useToast()
+const services = inject<Ref<AppServices | null>>('services')
+const fileOps = useFileOperations(services || ref(null))
 
 // Refs
 const treeContainer = ref<HTMLElement>()
@@ -151,6 +189,23 @@ const searchQuery = ref('')
 const error = ref<string | null>(null)
 const selectedNodeId = ref<string | null>(null)
 const expandedPaths = ref<Set<string>>(new Set())
+
+// Context menu refs
+const showContextMenu = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuItems = ref<ContextMenuItem[]>([])
+const contextNode = ref<TreeNodeType | null>(null)
+
+// Dialog refs
+const showNewItemDialog = ref(false)
+const newItemIsFolder = ref(false)
+const newItemParentPath = ref('/')
+const showDeleteDialog = ref(false)
+const deleteItem = ref<TreeNodeType | null>(null)
+
+// Inline edit refs
+const editingNodeId = ref<string | null>(null)
 
 // Use loading from store
 const loading = computed(() => fileTreeStore.loading)
@@ -318,6 +373,14 @@ function handleKeyDown(event: KeyboardEvent) {
       event.preventDefault()
       toggleNode(node.id)
       break
+    case 'Delete':
+      event.preventDefault()
+      handleDelete(node)
+      break
+    case 'F2':
+      event.preventDefault()
+      startRename(node)
+      break
   }
 }
 
@@ -359,7 +422,156 @@ function navigateDown() {
   }
 }
 
-// Removed - now using flattenedNodes computed property
+// Context menu handlers
+function handleContextMenu(event: MouseEvent, node: TreeNodeType) {
+  contextNode.value = node
+  contextMenuX.value = event.clientX
+  contextMenuY.value = event.clientY
+  
+  if (node.type === 'file') {
+    contextMenuItems.value = [
+      {
+        id: 'open',
+        label: t('fileTree.open'),
+        icon: 'file-open',
+        action: () => openFile(node.id),
+        shortcut: 'Enter'
+      },
+      {
+        id: 'rename',
+        label: t('fileTree.rename'),
+        icon: 'edit',
+        action: () => startRename(node),
+        shortcut: 'F2'
+      },
+      {
+        id: 'delete',
+        label: t('fileTree.delete'),
+        icon: 'trash',
+        action: () => handleDelete(node),
+        shortcut: 'Del',
+        danger: true
+      },
+      { id: 'divider1', divider: true },
+      {
+        id: 'copyPath',
+        label: t('fileTree.copyPath'),
+        icon: 'copy',
+        action: () => fileOps.copyPath(node.path)
+      }
+    ]
+  } else {
+    contextMenuItems.value = [
+      {
+        id: 'newFile',
+        label: t('fileTree.newFile'),
+        icon: 'file-plus',
+        action: () => {
+          newItemIsFolder.value = false
+          newItemParentPath.value = node.path
+          showNewItemDialog.value = true
+        }
+      },
+      {
+        id: 'newFolder',
+        label: t('fileTree.newFolder'),
+        icon: 'folder-plus',
+        action: () => {
+          newItemIsFolder.value = true
+          newItemParentPath.value = node.path
+          showNewItemDialog.value = true
+        }
+      },
+      { id: 'divider1', divider: true },
+      {
+        id: 'rename',
+        label: t('fileTree.rename'),
+        icon: 'edit',
+        action: () => startRename(node),
+        shortcut: 'F2'
+      },
+      {
+        id: 'delete',
+        label: t('fileTree.delete'),
+        icon: 'trash',
+        action: () => handleDelete(node),
+        shortcut: 'Del',
+        danger: true
+      },
+      { id: 'divider2', divider: true },
+      {
+        id: 'refresh',
+        label: t('fileTree.refresh'),
+        icon: 'refresh',
+        action: () => fileTreeStore.refreshNode(node.path)
+      }
+    ]
+  }
+  
+  showContextMenu.value = true
+}
+
+function handleContextMenuAction(item: ContextMenuItem) {
+  if (item.action) {
+    item.action()
+  }
+}
+
+// File operations
+function startRename(node: TreeNodeType) {
+  editingNodeId.value = node.id
+  // Implement inline editing in TreeNode component
+  toast.info('Rename functionality coming soon')
+}
+
+function handleDelete(node: TreeNodeType) {
+  deleteItem.value = node
+  showDeleteDialog.value = true
+}
+
+async function handleDeleteConfirm() {
+  if (!deleteItem.value) return
+  
+  try {
+    await fileOps.deleteItem(deleteItem.value.path)
+    showDeleteDialog.value = false
+    deleteItem.value = null
+  } catch (error) {
+    console.error('Delete failed:', error)
+  }
+}
+
+async function handleNewItem(name: string) {
+  try {
+    if (newItemIsFolder.value) {
+      await fileOps.createFolder(newItemParentPath.value, name)
+    } else {
+      await fileOps.createFile(newItemParentPath.value, name)
+    }
+    showNewItemDialog.value = false
+  } catch (error) {
+    console.error('Create failed:', error)
+  }
+}
+
+function getExistingNames(parentPath: string): string[] {
+  const parentNode = findNodeByPath(fileTreeStore.tree, parentPath)
+  if (parentNode && parentNode.children) {
+    return parentNode.children.map(child => child.name)
+  }
+  return []
+}
+
+function findNodeByPath(nodes: TreeNodeType[], path: string): TreeNodeType | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.children) {
+      const found = findNodeByPath(node.children, path)
+      if (found) return found
+    }
+  }
+  return null
+}
 
 // Watch for WebDAV connection changes
 watch(() => webdavStore.connectionStatus, (newStatus) => {

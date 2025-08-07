@@ -1,6 +1,11 @@
 <template>
   <Teleport to="body">
-    <div class="fixed top-4 right-4 space-y-2" style="z-index: 100;">
+    <div 
+      class="fixed top-4 right-4 space-y-2" 
+      style="z-index: 100;"
+      role="region"
+      aria-label="Notifications"
+    >
       <TransitionGroup
         enter-active-class="transition duration-300 ease-out"
         enter-from-class="transform translate-x-full opacity-0"
@@ -19,11 +24,15 @@
             'bg-blue-50/95 dark:bg-blue-900/95 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400': toast.type === 'info',
             'bg-yellow-50/95 dark:bg-yellow-900/95 border border-yellow-200 dark:border-yellow-800 text-yellow-600 dark:text-yellow-400': toast.type === 'warning'
           }"
+          role="alert"
+          :aria-live="toast.type === 'error' ? 'assertive' : 'polite'"
+          aria-atomic="true"
         >
           <span class="text-sm">{{ toast.message }}</span>
           <button
             @click="remove(toast.id)"
             class="text-current opacity-60 hover:opacity-100 transition-opacity"
+            :aria-label="`Dismiss notification: ${toast.message}`"
           >
             ✕
           </button>
@@ -31,10 +40,34 @@
       </TransitionGroup>
     </div>
   </Teleport>
+  
+  <!-- Screen reader only live region for immediate announcements -->
+  <div 
+    class="sr-only"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+  >
+    {{ latestAnnouncement }}
+  </div>
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
 import { useToast } from '../composables/useToast'
 
 const { toasts, remove } = useToast()
+const latestAnnouncement = ref('')
+
+// Update announcement when new toast is added
+watch(toasts, (newToasts, oldToasts) => {
+  if (newToasts.length > (oldToasts?.length || 0)) {
+    const newToast = newToasts[newToasts.length - 1]
+    latestAnnouncement.value = newToast.message
+    // Clear after announcement
+    setTimeout(() => {
+      latestAnnouncement.value = ''
+    }, 100)
+  }
+})
 </script>

@@ -23,15 +23,21 @@
             leave-from-class="transform scale-100 opacity-100"
             leave-to-class="transform scale-95 opacity-0"
           >
-            <div class="relative theme-modal w-full max-w-lg transform transition-all z-10">
+            <div 
+              class="relative theme-modal w-full max-w-lg transform transition-all z-10"
+              role="dialog"
+              aria-modal="true"
+              :aria-labelledby="modalTitleId"
+            >
               <!-- 标题栏 -->
               <div class="theme-modal-header flex items-center justify-between">
-                <h3 class="text-lg font-semibold theme-text">
+                <h3 :id="modalTitleId" class="text-lg font-semibold theme-text">
                   <slot name="title">{{ t('common.title') }}</slot>
                 </h3>
                 <button
                   @click="$emit('update:modelValue', false)"
                   class="hover:theme-text transition-colors"
+                  aria-label="Close dialog"
                 >
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -71,6 +77,7 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'
 
 const { t } = useI18n()
 
@@ -82,6 +89,9 @@ defineProps({
 })
 
 const emit = defineEmits(['update:modelValue', 'confirm'])
+
+// Generate unique ID for modal title
+const modalTitleId = computed(() => `modal-title-${Math.random().toString(36).substr(2, 9)}`)
 
 const handleBackdropClick = (event) => {
   if (event.target === event.currentTarget) {
