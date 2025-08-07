@@ -1,7 +1,7 @@
 <template>
-  <div class="file-tree-container theme-card">
+  <div class="file-tree-container theme-card flex flex-col h-full">
     <!-- Header with search -->
-    <div class="file-tree-header theme-header p-3 border-b">
+    <div class="file-tree-header theme-header p-3 border-b flex-shrink-0">
       <div class="flex items-center justify-between">
         <h3 class="font-medium text-sm theme-title">{{ t('fileTree.title') }}</h3>
         <button
@@ -141,6 +141,11 @@
       :item="deleteItem"
       @confirm="handleDeleteConfirm"
     />
+    
+    <!-- File Tree Toolbar -->
+    <FileTreeToolbar 
+      @open-config="$emit('open-config')"
+    />
   </div>
 </template>
 
@@ -158,6 +163,7 @@ import ContextMenu from './ContextMenu.vue'
 import NewItemDialog from './NewItemDialog.vue'
 import DeleteConfirmDialog from './DeleteConfirmDialog.vue'
 import InlineEdit from './InlineEdit.vue'
+import FileTreeToolbar from './FileTreeToolbar.vue'
 import { validateFilename, sanitizeFilename } from '../utils/validation'
 import type { TreeNode as TreeNodeType } from '../types/fileTree'
 import type { ContextMenuItem } from './ContextMenu.vue'
@@ -172,6 +178,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'file-selected': [path: string]
   'file-opened': [path: string]
+  'open-config': []
 }>()
 
 // Composables
@@ -598,6 +605,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  position: relative;
 }
 
 .file-tree-content {
@@ -605,6 +613,8 @@ onUnmounted(() => {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  /* Account for toolbar height */
+  padding-bottom: 0;
 }
 
 .file-tree-content.loading {

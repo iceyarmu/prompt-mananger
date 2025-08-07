@@ -655,7 +655,25 @@ export default {
     error: 'Failed to load files',
     retry: 'Retry',
     notConnected: 'WebDAV not connected',
-    loadError: 'Failed to load file tree'
+    loadError: 'Failed to load file tree',
+    toolbar: {
+      refresh: 'Refresh',
+      configure: 'Configure WebDAV',
+      ariaLabel: 'File tree toolbar',
+      actions: 'Toolbar actions'
+    },
+    refresh: {
+      success: 'File tree refreshed successfully',
+      error: 'Failed to refresh file tree',
+      inProgress: 'Refreshing file tree...'
+    },
+    status: {
+      connectedTo: 'Connected to {name}',
+      connected: 'Connected',
+      disconnected: 'Disconnected',
+      connecting: 'Connecting',
+      error: 'Connection error'
+    }
   },
   webdav: {
     config: {
@@ -689,7 +707,8 @@ export default {
       reconnect: 'Reconnect',
       reconnected: 'Reconnected successfully',
       reconnectFailed: 'Reconnection failed: {error}',
-      configure: 'Configure'
+      configure: 'Configure',
+      lastSync: 'Last sync'
     },
     errors: {
       nameRequired: 'Profile name is required',
@@ -734,5 +753,10 @@ export default {
       retryingIn: 'Retrying in {seconds}s...'
     },
     loadingFile: 'Loading file...'
+  },
+  time: {
+    justNow: 'Just now',
+    minutesAgo: '{count} minute{count, plural, =1 {} other {s}} ago',
+    hoursAgo: '{count} hour{count, plural, =1 {} other {s}} ago'
   }
 };

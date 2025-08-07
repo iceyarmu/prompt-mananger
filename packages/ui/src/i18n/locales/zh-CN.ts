@@ -655,7 +655,25 @@ export default {
     error: '加载文件失败',
     retry: '重试',
     notConnected: 'WebDAV 未连接',
-    loadError: '加载文件树失败'
+    loadError: '加载文件树失败',
+    toolbar: {
+      refresh: '刷新',
+      configure: '配置 WebDAV',
+      ariaLabel: '文件树工具栏',
+      actions: '工具栏操作'
+    },
+    refresh: {
+      success: '文件树刷新成功',
+      error: '刷新文件树失败',
+      inProgress: '正在刷新文件树...'
+    },
+    status: {
+      connectedTo: '已连接到 {name}',
+      connected: '已连接',
+      disconnected: '未连接',
+      connecting: '正在连接',
+      error: '连接错误'
+    }
   },
   webdav: {
     config: {
@@ -689,7 +707,8 @@ export default {
       reconnect: '重新连接',
       reconnected: '重新连接成功',
       reconnectFailed: '重新连接失败：{error}',
-      configure: '配置'
+      configure: '配置',
+      lastSync: '上次同步'
     },
     errors: {
       nameRequired: '配置名称不能为空',
@@ -734,5 +753,10 @@ export default {
       retryingIn: '{seconds}秒后重试...'
     },
     loadingFile: '正在加载文件...'
+  },
+  time: {
+    justNow: '刚刚',
+    minutesAgo: '{count} 分钟前',
+    hoursAgo: '{count} 小时前'
   }
 };
