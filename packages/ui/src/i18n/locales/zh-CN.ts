@@ -732,6 +732,7 @@ export default {
       fileLoadedSuccessfully: '文件加载成功',
       fileSavedSuccessfully: '文件保存成功',
       retryingIn: '{seconds}秒后重试...'
-    }
+    },
+    loadingFile: '正在加载文件...'
   }
 };

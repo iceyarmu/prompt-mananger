@@ -43,6 +43,14 @@ export const editorPerformanceConfig = {
   // History management
   maxHistorySize: 100,
   historyMergeDelay: 1000, // ms
+  
+  // Memory management
+  maxContentCache: 5 * 1024 * 1024, // 5MB max cached content
+  cleanupThreshold: 100000, // 100KB triggers cleanup
+  
+  // Lazy loading
+  lazyLoadDelay: 200, // ms delay before loading components
+  lazyLoadTimeout: 10000, // ms timeout for component loading
 };
 
 export const editorThemeConfig = {

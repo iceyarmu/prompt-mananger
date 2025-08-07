@@ -39,6 +39,12 @@ export { default as UpdaterIcon } from './components/UpdaterIcon.vue'
 export { default as FileTreeUI } from './components/FileTree.vue'
 export { default as TreeNodeUI } from './components/TreeNode.vue'
 export { default as MarkdownEditorUI } from './components/MarkdownEditor.vue'
+export { default as EditorErrorBoundary } from './components/EditorErrorBoundary.vue'
+export { default as VirtualMarkdownEditor } from './components/VirtualMarkdownEditor.vue'
+export { default as LazyMarkdownEditor } from './components/LazyMarkdownEditor.vue'
+
+// 导出服务
+export { HighlightService, getHighlightService, destroyHighlightService } from './services/highlightService'
 
 // 导出指令
 export { clickOutside } from './directives/clickOutside'
