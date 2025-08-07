@@ -703,5 +703,35 @@ export default {
       serverNotFound: '服务器未找到',
       networkError: '网络错误'
     }
+  },
+  editor: {
+    untitled: '未命名',
+    saved: '文件保存成功',
+    viewModes: {
+      edit: '编辑',
+      preview: '预览',
+      split: '分栏'
+    },
+    unsavedIndicator: '未保存',
+    errorBoundary: {
+      title: '编辑器错误',
+      description: '编辑器发生意外错误。请尝试重新加载，如果问题持续存在，请联系技术支持。',
+      showDetails: '显示错误详情',
+      reload: '重新加载编辑器',
+      report: '报告问题',
+      dismiss: '忽略'
+    },
+    notifications: {
+      loadError: '文件加载失败',
+      saveError: '文件保存失败',
+      networkError: '网络错误 - 请检查连接',
+      permissionError: '权限不足 - 请检查访问权限',
+      fileTooLarge: '文件过大无法加载',
+      pathTraversalError: '检测到无效文件路径',
+      allRetriesFailed: '所有重试尝试均失败',
+      fileLoadedSuccessfully: '文件加载成功',
+      fileSavedSuccessfully: '文件保存成功',
+      retryingIn: '{seconds}秒后重试...'
+    }
   }
 };

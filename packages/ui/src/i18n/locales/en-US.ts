@@ -703,5 +703,36 @@ export default {
       serverNotFound: 'Server not found',
       networkError: 'Network error'
     }
+  },
+  editor: {
+    untitled: 'Untitled',
+    saved: 'File saved successfully',
+    viewModes: {
+      edit: 'Edit',
+      preview: 'Preview',
+      split: 'Split'
+    },
+    unsavedIndicator: 'Unsaved',
+    errorBoundary: {
+      title: 'Editor Error',
+      description: 'An unexpected error occurred in the editor. Please try reloading or contact support if the issue persists.',
+      showDetails: 'Show Error Details',
+      reload: 'Reload Editor',
+      report: 'Report Issue',
+      dismiss: 'Dismiss'
+    },
+    notifications: {
+      loadError: 'Failed to load file',
+      saveError: 'Failed to save file',
+      networkError: 'Network error - check connection',
+      permissionError: 'Permission denied - check access rights',
+      fileTooLarge: 'File too large to load',
+      pathTraversalError: 'Invalid file path detected',
+      allRetriesFailed: 'All retry attempts failed',
+      fileLoadedSuccessfully: 'File loaded successfully',
+      fileSavedSuccessfully: 'File saved successfully',
+      retryingIn: 'Retrying in {seconds}s...'
+    },
+    loadingFile: 'Loading file...'
   }
 };

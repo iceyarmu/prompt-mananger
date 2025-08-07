@@ -69,6 +69,7 @@
     "dayjs": "^1.11.13",
     "electron-to-chromium": "^1.5.177",
     "lodash-es": "^4.17.21",
+    "md-editor-v3": "^5.8.4",
     "memoize-one": "^6.0.0",
     "normalize-wheel-es": "^1.2.0",
     "vue-i18n": "^10.0.6"

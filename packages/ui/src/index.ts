@@ -38,6 +38,7 @@ export { default as OutputDisplayFullscreen } from './components/OutputDisplayFu
 export { default as UpdaterIcon } from './components/UpdaterIcon.vue'
 export { default as FileTreeUI } from './components/FileTree.vue'
 export { default as TreeNodeUI } from './components/TreeNode.vue'
+export { default as MarkdownEditorUI } from './components/MarkdownEditor.vue'
 
 // 导出指令
 export { clickOutside } from './directives/clickOutside'

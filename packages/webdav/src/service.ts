@@ -378,6 +378,66 @@ export class WebDAVService implements IWebDAVService {
   }
 
   /**
+   * Get partial file content from WebDAV server using range headers
+   * @param path - File path on server
+   * @param start - Start byte position
+   * @param end - End byte position (inclusive)
+   * @returns Partial file content as string
+   */
+  async getFileRange(path: string, start: number, end: number): Promise<string> {
+    if (!this.isConnected()) {
+      throw new WebDAVError(
+        'Service not connected',
+        WebDAVErrorCode.SERVICE_NOT_CONNECTED,
+        null,
+        'getFileRange',
+        path
+      );
+    }
+
+    try {
+      this.validatePath(path, 'getFileRange');
+      this.logOperation('getFileRange', { path, start, end });
+
+      // Validate range parameters
+      if (start < 0 || end < 0) {
+        throw new WebDAVError(
+          'Invalid range: start and end must be non-negative',
+          WebDAVErrorCode.INVALID_REQUEST,
+          null,
+          'getFileRange',
+          path
+        );
+      }
+
+      if (start > end) {
+        throw new WebDAVError(
+          'Invalid range: start must be less than or equal to end',
+          WebDAVErrorCode.INVALID_REQUEST,
+          null,
+          'getFileRange',
+          path
+        );
+      }
+
+      // Use the getFileContents method with range headers
+      const headers = {
+        'Range': `bytes=${start}-${end}`
+      };
+
+      const content = await this.client!.getFileContents(path, { 
+        format: 'text',
+        headers 
+      }) as string;
+      
+      return content;
+
+    } catch (error) {
+      this.handleError(error, 'getFileRange', path);
+    }
+  }
+
+  /**
    * Upload file to WebDAV server
    */
   async putFile(fileContent: FileContent): Promise<void> {

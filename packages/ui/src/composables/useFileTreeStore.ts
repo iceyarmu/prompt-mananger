@@ -232,6 +232,19 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     }
   }
 
+  // Set node modified state
+  function setNodeModified(path: string, isModified: boolean) {
+    const node = findNodeByPath(path)
+    if (node) {
+      // Add or remove modified indicator
+      if (isModified) {
+        node.name = node.name.endsWith(' •') ? node.name : `${node.name} •`
+      } else {
+        node.name = node.name.replace(' •', '')
+      }
+    }
+  }
+
   // Clear store on disconnect
   function clearTree() {
     tree.value = []
@@ -266,6 +279,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     findNodeByPath,
     refresh,
     refreshNode,
+    setNodeModified,
     clearTree
   }
 })

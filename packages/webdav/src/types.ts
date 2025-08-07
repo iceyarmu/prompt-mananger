@@ -112,6 +112,14 @@ export interface IWebDAVService {
    * @returns Promise<FileContent>
    */
   getFile(path: string): Promise<FileContent>;
+  /**
+   * Get partial file content from WebDAV server using range headers
+   * @param path File path on server
+   * @param start Start byte position
+   * @param end End byte position (inclusive)
+   * @returns Promise<string> - Partial file content
+   */
+  getFileRange?(path: string, start: number, end: number): Promise<string>;
 
   /**
    * Upload file to WebDAV server
