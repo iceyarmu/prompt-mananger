@@ -646,6 +646,17 @@ export default {
     noReleasesFound: 'No releases found. This project may not have published any versions yet.',
     noStableReleasesFound: 'No stable releases found. Only prerelease versions may be available.'
   },
+  fileTree: {
+    title: 'Files',
+    searchPlaceholder: 'Search files...',
+    clearSearch: 'Clear search',
+    empty: 'No files found',
+    noResults: 'No files matching search',
+    error: 'Failed to load files',
+    retry: 'Retry',
+    notConnected: 'WebDAV not connected',
+    loadError: 'Failed to load file tree'
+  },
   webdav: {
     config: {
       title: 'WebDAV Configuration',

@@ -646,6 +646,17 @@ export default {
     noReleasesFound: '未找到发布版本。此项目可能尚未发布任何版本。',
     noStableReleasesFound: '未找到正式版本。可能只有预览版本可用。'
   },
+  fileTree: {
+    title: '文件',
+    searchPlaceholder: '搜索文件...',
+    clearSearch: '清除搜索',
+    empty: '未找到文件',
+    noResults: '没有匹配的文件',
+    error: '加载文件失败',
+    retry: '重试',
+    notConnected: 'WebDAV 未连接',
+    loadError: '加载文件树失败'
+  },
   webdav: {
     config: {
       title: 'WebDAV 配置',

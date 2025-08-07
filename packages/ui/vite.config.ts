@@ -24,13 +24,16 @@ export default defineConfig({
     } : null,
     sourcemap: true,
     rollupOptions: {
-      external: ['vue', '@prompt-optimizer/core', 'element-plus', 'element-plus/dist/index.css', 'uuid'],
+      external: ['vue', '@prompt-optimizer/core', '@prompt-optimizer/webdav', 'element-plus', 'element-plus/dist/index.css', 'uuid', 'pinia', 'vue-i18n'],
       output: {
         globals: {
           vue: 'Vue',
           '@prompt-optimizer/core': 'PromptOptimizerCore',
+          '@prompt-optimizer/webdav': 'PromptOptimizerWebDAV',
           'element-plus': 'ElementPlus',
-          'uuid': 'uuid'
+          'uuid': 'uuid',
+          'pinia': 'Pinia',
+          'vue-i18n': 'VueI18n'
         },
         assetFileNames: 'style.css'
       }

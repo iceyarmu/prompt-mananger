@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { WebDAVService, type WebDAVConfig, type ConnectionTestResult } from '@prompt-optimizer/webdav'
-import { CredentialManager } from '@/utils/credentialManager'
+import { CredentialManager } from '../utils/credentialManager'
 
 export interface WebDAVProfile {
   id: string
