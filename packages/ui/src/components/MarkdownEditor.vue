@@ -58,6 +58,46 @@
               @update:selectedTemplate="setSelectedTemplate"
             />
           </div>
+          
+          <!-- Execute Button and Model Selector -->
+          <div class="ml-2 pl-2 border-l border-gray-300 dark:border-gray-600 flex items-center gap-1">
+            <!-- Model selector -->
+            <ModelSelect
+              v-model="selectedExecutionModel"
+              :disabled="executing"
+              @config="showModelManager = true"
+              class="w-40"
+            />
+            
+            <!-- Execute button -->
+            <button
+              :class="[
+                'px-3 py-1 text-xs rounded transition-colors flex items-center gap-1',
+                !content || executing || !selectedExecutionModel
+                  ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                  : 'bg-green-500 text-white hover:bg-green-600'
+              ]"
+              :disabled="!content || executing || !selectedExecutionModel"
+              :aria-label="$t('editor.execute', 'Execute')"
+              @click="executePrompt"
+            >
+              <svg v-if="!executing" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <svg v-else class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>{{ executing ? $t('editor.executing', 'Executing...') : $t('editor.execute', 'Execute') }}</span>
+            </button>
+            
+            <!-- Execution Options -->
+            <ExecutionOptionsPopover
+              v-model:options="executionOptions"
+              :selectedModel="selectedExecutionModel"
+            />
+          </div>
         </div>
       </div>
       
@@ -100,6 +140,20 @@
       @update:visible="showOptimizationModal = $event"
       @apply="applyOptimization"
     />
+    
+    <!-- Execution Results Panel -->
+    <ExecutionResultsPanel
+      v-if="showExecutionResults"
+      :result="executionResult"
+      :streaming="executing"
+      @close="showExecutionResults = false"
+    />
+    
+    <!-- Model Manager Modal -->
+    <ModelManager
+      v-if="showModelManager"
+      @close="showModelManager = false"
+    />
   </EditorErrorBoundary>
 </template>
 
@@ -109,9 +163,14 @@ import 'md-editor-v3/lib/style.css';
 import { ref } from 'vue';
 import { useMarkdownEditor } from '../composables/useMarkdownEditor';
 import { useEditorOptimization } from '../composables/useEditorOptimization';
+import { usePromptExecution } from '../composables/usePromptExecution';
 import EditorErrorBoundary from './EditorErrorBoundary.vue';
 import OptimizationResultsModal from './OptimizationResultsModal.vue';
 import OptimizationOptionsPopover from './OptimizationOptionsPopover.vue';
+import ModelSelect from './ModelSelect.vue';
+import ExecutionOptionsPopover from './ExecutionOptionsPopover.vue';
+import ExecutionResultsPanel from './ExecutionResultsPanel.vue';
+import ModelManager from './ModelManager.vue';
 
 const {
   content,
@@ -145,6 +204,17 @@ const {
   setSelectedModel,
   setSelectedTemplate
 } = useEditorOptimization(content);
+
+// Prompt execution integration
+const {
+  executing,
+  selectedExecutionModel,
+  executionOptions,
+  executionResult,
+  showExecutionResults,
+  showModelManager,
+  executePrompt
+} = usePromptExecution(content);
 </script>
 
 <style scoped>
