@@ -645,5 +645,52 @@ export default {
     viewOnGitHub: 'View on GitHub',
     noReleasesFound: 'No releases found. This project may not have published any versions yet.',
     noStableReleasesFound: 'No stable releases found. Only prerelease versions may be available.'
+  },
+  webdav: {
+    config: {
+      title: 'WebDAV Configuration',
+      selectProfile: 'Select Profile',
+      profileName: 'Profile Name',
+      profileNamePlaceholder: 'My WebDAV Server',
+      serverUrl: 'Server URL',
+      urlPlaceholder: 'https://your-webdav-server.com/webdav',
+      urlHint: 'HTTPS is preferred for security',
+      username: 'Username',
+      usernamePlaceholder: 'username (optional)',
+      password: 'Password',
+      passwordPlaceholder: 'password (optional)',
+      testConnection: 'Test Connection',
+      testing: 'Testing...',
+      connectionSuccessful: 'Connection successful! ({time}ms)',
+      connectionFailed: 'Connection failed: {error}',
+      profileSaved: 'Profile saved successfully',
+      profileUpdated: 'Profile updated successfully',
+      profileDeleted: 'Profile deleted successfully',
+      deleteProfile: 'Delete Profile',
+      confirmDeleteProfile: 'Are you sure you want to delete this profile?',
+      active: 'Active'
+    },
+    status: {
+      connected: 'Connected',
+      connecting: 'Connecting',
+      disconnected: 'Disconnected',
+      error: 'Connection Error',
+      reconnect: 'Reconnect',
+      reconnected: 'Reconnected successfully',
+      reconnectFailed: 'Reconnection failed: {error}',
+      configure: 'Configure'
+    },
+    errors: {
+      nameRequired: 'Profile name is required',
+      urlRequired: 'Server URL is required',
+      invalidUrl: 'Invalid URL format',
+      invalidProtocol: 'Only HTTP and HTTPS protocols are supported',
+      failedToSaveProfile: 'Failed to save profile',
+      failedToDeleteProfile: 'Failed to delete profile',
+      connectionTimeout: 'Connection timeout',
+      authenticationFailed: 'Authentication failed',
+      serverNotFound: 'Server not found',
+      networkError: 'Network error'
+    }
   }
 };

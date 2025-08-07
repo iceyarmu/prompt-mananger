@@ -645,5 +645,52 @@ export default {
     clickToCheck: '点击检查更新',
     noReleasesFound: '未找到发布版本。此项目可能尚未发布任何版本。',
     noStableReleasesFound: '未找到正式版本。可能只有预览版本可用。'
+  },
+  webdav: {
+    config: {
+      title: 'WebDAV 配置',
+      selectProfile: '选择配置文件',
+      profileName: '配置名称',
+      profileNamePlaceholder: '我的 WebDAV 服务器',
+      serverUrl: '服务器地址',
+      urlPlaceholder: 'https://your-webdav-server.com/webdav',
+      urlHint: '建议使用 HTTPS 以确保安全',
+      username: '用户名',
+      usernamePlaceholder: '用户名（可选）',
+      password: '密码',
+      passwordPlaceholder: '密码（可选）',
+      testConnection: '测试连接',
+      testing: '测试中...',
+      connectionSuccessful: '连接成功！（{time}毫秒）',
+      connectionFailed: '连接失败：{error}',
+      profileSaved: '配置保存成功',
+      profileUpdated: '配置更新成功',
+      profileDeleted: '配置删除成功',
+      deleteProfile: '删除配置',
+      confirmDeleteProfile: '确定要删除此配置吗？',
+      active: '当前使用'
+    },
+    status: {
+      connected: '已连接',
+      connecting: '连接中',
+      disconnected: '未连接',
+      error: '连接错误',
+      reconnect: '重新连接',
+      reconnected: '重新连接成功',
+      reconnectFailed: '重新连接失败：{error}',
+      configure: '配置'
+    },
+    errors: {
+      nameRequired: '配置名称不能为空',
+      urlRequired: '服务器地址不能为空',
+      invalidUrl: '无效的地址格式',
+      invalidProtocol: '仅支持 HTTP 和 HTTPS 协议',
+      failedToSaveProfile: '保存配置失败',
+      failedToDeleteProfile: '删除配置失败',
+      connectionTimeout: '连接超时',
+      authenticationFailed: '身份验证失败',
+      serverNotFound: '服务器未找到',
+      networkError: '网络错误'
+    }
   }
 };
