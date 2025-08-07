@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  webdav:
+    image: bytemark/webdav
+    container_name: prompt-optimizer-webdav-test
+    ports:
+      - "8080:80"
+    environment:
+      AUTH_TYPE: Basic
+      USERNAME: testuser
+      PASSWORD: testpass
+    volumes:
+      - ./test-data:/var/lib/dav/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "testuser:testpass", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

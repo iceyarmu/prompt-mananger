@@ -56,25 +56,44 @@
 
       <!-- Tree nodes -->
       <div v-else class="py-1">
-        <template v-if="shouldUseVirtualScroll">
+        <template v-if="shouldUseVirtualScroll && virtualizer">
           <!-- Virtual scrolling for large trees -->
           <div
-            ref="virtualList"
+            ref="virtualContainer"
             class="virtual-scroll-container"
-            :style="{ height: virtualScrollHeight + 'px' }"
+            :style="{ height: '400px', overflow: 'auto' }"
           >
-            <TreeNode
-              v-for="node in visibleNodes"
-              :key="node.id"
-              :node="node"
-              :level="0"
-              :selected-id="selectedNodeId"
-              :expanded-paths="expandedPaths"
-              :search-query="searchQuery"
-              @select="selectNode"
-              @toggle="toggleNode"
-              @open="openFile"
-            />
+            <div
+              :style="{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative'
+              }"
+            >
+              <div
+                v-for="virtualItem in virtualizer.getVirtualItems()"
+                :key="virtualItem.key"
+                :style="{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: `${virtualItem.size}px`,
+                  transform: `translateY(${virtualItem.start}px)`
+                }"
+              >
+                <TreeNode
+                  :node="flattenedNodes[virtualItem.index]"
+                  :level="flattenedNodes[virtualItem.index].level || 0"
+                  :selected-id="selectedNodeId"
+                  :expanded-paths="expandedPaths"
+                  :search-query="searchQuery"
+                  @select="selectNode"
+                  @toggle="toggleNode"
+                  @open="openFile"
+                />
+              </div>
+            </div>
           </div>
         </template>
         <template v-else>
@@ -100,6 +119,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useFileTreeStore } from '../composables/useFileTreeStore'
 import { useToast } from '../composables/useToast'
 import { useWebDAVStore } from '../composables/useWebDAVStore'
@@ -126,7 +146,7 @@ const toast = useToast()
 
 // Refs
 const treeContainer = ref<HTMLElement>()
-const virtualList = ref<HTMLElement>()
+const virtualContainer = ref<HTMLElement>()
 const searchQuery = ref('')
 const error = ref<string | null>(null)
 const selectedNodeId = ref<string | null>(null)
@@ -136,21 +156,51 @@ const expandedPaths = ref<Set<string>>(new Set())
 const loading = computed(() => fileTreeStore.loading)
 
 // Virtual scrolling
-const virtualScrollHeight = ref(0)
-const visibleNodes = ref<TreeNodeType[]>([])
 const VIRTUAL_SCROLL_THRESHOLD = 100
 const NODE_HEIGHT = 28 // Height of each tree node in pixels
 
 // Computed
 const filteredTree = computed(() => {
-  if (!fileTreeStore.tree.value) {
+  if (!fileTreeStore.tree) {
     return []
   }
-  return fileTreeStore.filterTree(fileTreeStore.tree.value, searchQuery.value)
+  return fileTreeStore.filterTree(fileTreeStore.tree, searchQuery.value)
+})
+
+// Flatten tree for virtual scrolling
+const flattenedNodes = computed(() => {
+  const nodes: (TreeNodeType & { level: number })[] = []
+  
+  const flatten = (nodeList: TreeNodeType[], level: number = 0) => {
+    for (const node of nodeList) {
+      nodes.push({ ...node, level })
+      if (node.type === 'folder' && node.children && expandedPaths.value.has(node.path)) {
+        flatten(node.children, level + 1)
+      }
+    }
+  }
+  
+  flatten(filteredTree.value)
+  return nodes
 })
 
 const shouldUseVirtualScroll = computed(() => {
-  return getTotalNodeCount(filteredTree.value) > VIRTUAL_SCROLL_THRESHOLD
+  return flattenedNodes.value.length > VIRTUAL_SCROLL_THRESHOLD
+})
+
+// Virtual scrolling setup - create lazily
+const virtualizer = computed(() => {
+  if (!virtualContainer.value || !shouldUseVirtualScroll.value) {
+    return null
+  }
+  
+  return useVirtualizer({
+    get scrollElement() { return virtualContainer.value },
+    count: flattenedNodes.value.length,
+    estimateSize: () => NODE_HEIGHT,
+    overscan: 5,
+    getItemKey: (index: number) => flattenedNodes.value[index]?.id || index
+  })
 })
 
 // Debounced search
@@ -160,19 +210,6 @@ const onSearchInput = debounce((event: Event) => {
 }, 300)
 
 // Methods
-function getTotalNodeCount(nodes: TreeNodeType[]): number {
-  let count = 0
-  const traverse = (nodeList: TreeNodeType[]) => {
-    for (const node of nodeList) {
-      count++
-      if (node.children && expandedPaths.value.has(node.path)) {
-        traverse(node.children)
-      }
-    }
-  }
-  traverse(nodes)
-  return count
-}
 
 async function loadTree() {
   if (!webdavStore.isConnected) {
@@ -288,11 +325,10 @@ function navigateUp() {
   // Implementation for keyboard navigation up
   if (!selectedNodeId.value) return
   
-  const allVisibleNodes = getFlattenedVisibleNodes(filteredTree.value)
-  const currentIndex = allVisibleNodes.findIndex(node => node.id === selectedNodeId.value)
+  const currentIndex = flattenedNodes.value.findIndex(node => node.id === selectedNodeId.value)
   
   if (currentIndex > 0) {
-    const previousNode = allVisibleNodes[currentIndex - 1]
+    const previousNode = flattenedNodes.value[currentIndex - 1]
     selectNode(previousNode.id)
     
     // Ensure the selected node is visible
@@ -305,18 +341,16 @@ function navigateDown() {
   // Implementation for keyboard navigation down
   if (!selectedNodeId.value) {
     // Select first node if nothing selected
-    const allVisibleNodes = getFlattenedVisibleNodes(filteredTree.value)
-    if (allVisibleNodes.length > 0) {
-      selectNode(allVisibleNodes[0].id)
+    if (flattenedNodes.value.length > 0) {
+      selectNode(flattenedNodes.value[0].id)
     }
     return
   }
   
-  const allVisibleNodes = getFlattenedVisibleNodes(filteredTree.value)
-  const currentIndex = allVisibleNodes.findIndex(node => node.id === selectedNodeId.value)
+  const currentIndex = flattenedNodes.value.findIndex(node => node.id === selectedNodeId.value)
   
-  if (currentIndex < allVisibleNodes.length - 1) {
-    const nextNode = allVisibleNodes[currentIndex + 1]
+  if (currentIndex < flattenedNodes.value.length - 1) {
+    const nextNode = flattenedNodes.value[currentIndex + 1]
     selectNode(nextNode.id)
     
     // Ensure the selected node is visible
@@ -325,21 +359,7 @@ function navigateDown() {
   }
 }
 
-function getFlattenedVisibleNodes(nodes: TreeNodeType[]): TreeNodeType[] {
-  const result: TreeNodeType[] = []
-  
-  const traverse = (nodeList: TreeNodeType[]) => {
-    for (const node of nodeList) {
-      result.push(node)
-      if (node.type === 'folder' && node.children && expandedPaths.value.has(node.path)) {
-        traverse(node.children)
-      }
-    }
-  }
-  
-  traverse(nodes)
-  return result
-}
+// Removed - now using flattenedNodes computed property
 
 // Watch for WebDAV connection changes
 watch(() => webdavStore.connectionStatus, (newStatus) => {

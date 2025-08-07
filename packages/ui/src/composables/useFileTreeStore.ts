@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { useWebDAVStore } from './useWebDAVStore'
+import { WebDAVService, type FileInfo } from '@prompt-optimizer/webdav'
 import type { TreeNode } from '../types/fileTree'
 
 export const useFileTreeStore = defineStore('fileTree', () => {
@@ -29,11 +30,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     error.value = null
 
     try {
-      // Get the WebDAV service from the store
-      const profile = await webdavStore.getProfileWithCredentials(webdavStore.activeProfile!.id)
-      
-      // For now, we'll create a mock tree structure
-      // In a real implementation, this would call the WebDAV service
+      // Load the tree structure from WebDAV
       const rootNodes = await loadDirectoryContents(path)
       tree.value = rootNodes
       
@@ -51,61 +48,60 @@ export const useFileTreeStore = defineStore('fileTree', () => {
   }
 
   async function loadDirectoryContents(path: string): Promise<TreeNode[]> {
-    // This is a placeholder implementation
-    // In reality, this would call the WebDAV service's listFolder method
+    // Create a WebDAV service instance and connect
+    const webdavService = new WebDAVService()
     
-    // For now, return a mock structure
-    if (path === '/') {
-      return [
-        {
-          id: 'folder-1',
-          name: 'prompts',
-          path: '/prompts',
-          type: 'folder',
-          children: [
-            {
-              id: 'file-1',
-              name: 'example.md',
-              path: '/prompts/example.md',
-              type: 'file',
-              metadata: {
-                size: 1024,
-                modified: new Date()
-              }
-            },
-            {
-              id: 'file-2',
-              name: 'template.md',
-              path: '/prompts/template.md',
-              type: 'file',
-              metadata: {
-                size: 2048,
-                modified: new Date()
-              }
-            }
-          ]
-        },
-        {
-          id: 'folder-2',
-          name: 'templates',
-          path: '/templates',
-          type: 'folder',
-          children: []
-        },
-        {
-          id: 'file-3',
-          name: 'README.md',
-          path: '/README.md',
-          type: 'file',
+    // Get credentials from the webdav store
+    const profile = await webdavStore.getProfileWithCredentials(webdavStore.activeProfile!.id)
+    
+    // Connect to WebDAV using the profile credentials
+    await webdavService.connect({
+      url: profile.url,
+      username: profile.username,
+      password: profile.password,
+      authType: profile.username && profile.password ? 'basic' : 'none',
+      timeout: 30000
+    })
+    
+    try {
+      // List folder contents from WebDAV
+      const items = await webdavService.listFolder(path)
+      
+      // Build tree nodes from WebDAV items
+      const nodes: TreeNode[] = []
+      
+      for (const item of items) {
+        // Filter to only show .md files and folders that might contain them
+        if (item.type === 'file' && !item.name.toLowerCase().endsWith('.md')) {
+          continue // Skip non-.md files
+        }
+        
+        const node: TreeNode = {
+          id: `${item.type}-${item.path}`,
+          name: item.name,
+          path: item.path,
+          type: item.type === 'directory' ? 'folder' : 'file',
           metadata: {
-            size: 512,
-            modified: new Date()
+            size: item.size,
+            modified: item.lastModified
           }
         }
-      ]
+        
+        // For folders, recursively check if they contain .md files
+        if (item.type === 'directory') {
+          // Check if folder has any .md files (lazy load on expand)
+          node.children = [] // Initialize as empty, will load on expand
+        }
+        
+        nodes.push(node)
+      }
+      
+      return nodes
+      
+    } finally {
+      // Always disconnect after operation
+      await webdavService.disconnect()
     }
-    
-    return []
   }
 
   function selectNode(node: TreeNode | null) {
@@ -119,7 +115,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
       } else {
         expandedPaths.value.add(node.path)
         // Lazy load children if not loaded
-        if (!node.children) {
+        if (!node.children || node.children.length === 0) {
           node.loading = true
           loadDirectoryContents(node.path).then(children => {
             node.children = children
@@ -127,6 +123,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
           }).catch(err => {
             console.error('Failed to load folder contents:', err)
             node.loading = false
+            error.value = err instanceof Error ? err.message : 'Failed to load folder contents'
           })
         }
       }
@@ -219,6 +216,22 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     return loadTree()
   }
 
+  async function refreshNode(nodePath: string) {
+    const node = findNodeByPath(nodePath)
+    if (node && node.type === 'folder') {
+      node.loading = true
+      try {
+        const children = await loadDirectoryContents(nodePath)
+        node.children = children
+      } catch (err) {
+        console.error('Failed to refresh folder:', err)
+        error.value = err instanceof Error ? err.message : 'Failed to refresh folder'
+      } finally {
+        node.loading = false
+      }
+    }
+  }
+
   // Clear store on disconnect
   function clearTree() {
     tree.value = []
@@ -252,6 +265,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     filterTree,
     findNodeByPath,
     refresh,
+    refreshNode,
     clearTree
   }
 })
