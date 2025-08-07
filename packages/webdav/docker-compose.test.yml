@@ -1,0 +1,26 @@
+# WebDAV Test Server
+# Use this to run integration tests against a real WebDAV server
+
+version: '3.8'
+
+services:
+  webdav:
+    image: bytemark/webdav
+    container_name: webdav-test-server
+    ports:
+      - "8080:80"
+    environment:
+      - AUTH_TYPE=Basic
+      - USERNAME=test
+      - PASSWORD=test
+    volumes:
+      - webdav_data:/var/lib/dav
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  webdav_data:
