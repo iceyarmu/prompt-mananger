@@ -1,0 +1,17 @@
+{
+  "result": "Based on your requirements, I understand you're looking for a comprehensive AI assistant that can provide detailed and accurate responses. Here's how I can help:\n\n## Key Capabilities\n\n1. **Detailed Analysis**: I can break down complex topics into understandable components\n2. **Accurate Information**: I provide fact-based responses with citations when appropriate\n3. **Interactive Dialogue**: I ask clarifying questions to ensure I understand your needs\n\n## Example Response Structure\n\nWhen you ask a question, I typically:\n- First acknowledge your query\n- Provide a structured response with clear sections\n- Include relevant examples\n- Offer follow-up suggestions\n\n## How Can I Assist You?\n\nPlease feel free to ask any questions or provide tasks you'd like help with. I'm here to ensure you receive the most helpful and accurate information possible.",
+  "usage": {
+    "promptTokens": 125,
+    "completionTokens": 187,
+    "totalTokens": 312,
+    "cost": 0.0042
+  },
+  "metadata": {
+    "model": "gpt-3.5-turbo",
+    "executionTime": 2341,
+    "temperature": 0.7,
+    "maxTokens": 500,
+    "timestamp": "2025-01-08T10:00:00Z"
+  },
+  "success": true
+}
