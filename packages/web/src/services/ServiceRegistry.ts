@@ -19,6 +19,10 @@ import {
 } from '@prompt-optimizer/core'
 import type { ApplicationConfig } from '../types/application'
 import { createLogger } from '../utils/logger'
+import { WebDAVService } from './WebDAVService'
+import { FileOperationsService } from './FileOperationsService'
+import { EditorService } from './EditorService'
+import { EditorOptimizationBridge } from './EditorOptimizationBridge'
 
 const logger = createLogger('ServiceRegistry')
 
@@ -32,7 +36,9 @@ export interface ServiceHealthCheck {
 export interface ServiceRegistry {
   storageService: any // StorageService type from core
   preferenceService: PreferenceService
-  webDAVService?: any // WebDAV service when implemented
+  webDAVService?: WebDAVService // WebDAV service when implemented
+  fileOperationsService: FileOperationsService // File operations service
+  editorService: EditorService // Editor service
   modelService: ModelManager
   templateService: TemplateManager
   optimizationService: PromptService
@@ -40,6 +46,7 @@ export interface ServiceRegistry {
   historyService: HistoryManager
   dataService: DataManager
   compareService: CompareService
+  editorOptimizationBridge: EditorOptimizationBridge // Bridge between editor and optimization
   performHealthChecks: () => Promise<ServiceHealthCheck[]>
   cleanup: () => void // Made required for consistency
   isInitialized: boolean // Added to track initialization state
@@ -73,14 +80,32 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
     logger.info('PreferenceService initialized')
     
     // 3. Initialize WebDAVService (if configured)
-    let webDAVService
+    let webDAVService: WebDAVService | undefined
     if (config.webdav.enabled && config.webdav.url) {
       logger.debug('Initializing WebDAVService...')
-      // TODO: Implement WebDAV service initialization
-      logger.warn('WebDAV service not yet implemented')
+      try {
+        webDAVService = new WebDAVService(config.webdav)
+        await webDAVService.init()
+        logger.info('WebDAVService initialized')
+      } catch (error) {
+        logger.error('Failed to initialize WebDAVService', error)
+        // WebDAV is optional, so we continue without it
+        logger.warn('Continuing without WebDAV service')
+      }
     }
     
-    // 4. Initialize ModelService (loads AI models)
+    // 4. Initialize FileOperationsService (file handling)
+    logger.debug('Initializing FileOperationsService...')
+    const fileOperationsService = new FileOperationsService(storageService, webDAVService)
+    logger.info('FileOperationsService initialized')
+    
+    // 5. Initialize EditorService (editor functionality)
+    logger.debug('Initializing EditorService...')
+    const editorService = new EditorService(preferenceService, fileOperationsService)
+    await editorService.init()
+    logger.info('EditorService initialized')
+    
+    // 6. Initialize ModelService (loads AI models)
     logger.debug('Initializing ModelService...')
     const modelService = isElectron
       ? new ElectronModelManagerProxy()
@@ -91,7 +116,7 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
     }
     logger.info('ModelService initialized')
     
-    // 5. Initialize TemplateService (loads templates)
+    // 7. Initialize TemplateService (loads templates)
     logger.debug('Initializing TemplateService...')
     const templateService = isElectron
       ? new ElectronTemplateManagerProxy()
@@ -102,7 +127,7 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
     }
     logger.info('TemplateService initialized')
     
-    // 6. Initialize OptimizationService (PromptService)
+    // 8. Initialize OptimizationService (PromptService)
     logger.debug('Initializing OptimizationService...')
     const optimizationService = isElectron
       ? new ElectronPromptServiceProxy()
@@ -114,14 +139,20 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
         )
     logger.info('OptimizationService initialized')
     
-    // 7. Initialize ExecutionService (LLMService)
+    // 9. Initialize EditorOptimizationBridge (connects editor and optimization)
+    logger.debug('Initializing EditorOptimizationBridge...')
+    const editorOptimizationBridge = new EditorOptimizationBridge(editorService, optimizationService)
+    await editorOptimizationBridge.init()
+    logger.info('EditorOptimizationBridge initialized')
+    
+    // 10. Initialize ExecutionService (LLMService)
     logger.debug('Initializing ExecutionService...')
     const executionService = isElectron
       ? new ElectronLLMProxy()
       : new LLMService(modelService, preferenceService)
     logger.info('ExecutionService initialized')
     
-    // 8. Initialize HistoryService
+    // 11. Initialize HistoryService
     logger.debug('Initializing HistoryService...')
     const historyService = isElectron
       ? new ElectronHistoryManagerProxy()
@@ -132,7 +163,7 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
     }
     logger.info('HistoryService initialized')
     
-    // 9. Initialize DataService
+    // 12. Initialize DataService
     logger.debug('Initializing DataService...')
     const dataService = isElectron
       ? new ElectronDataManagerProxy()
@@ -143,7 +174,7 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
     }
     logger.info('DataService initialized')
     
-    // 10. Initialize CompareService
+    // 13. Initialize CompareService
     logger.debug('Initializing CompareService...')
     const compareService = new CompareService()
     logger.info('CompareService initialized')
@@ -155,6 +186,8 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
       storageService,
       preferenceService,
       webDAVService,
+      fileOperationsService,
+      editorService,
       modelService,
       templateService,
       optimizationService,
@@ -162,6 +195,7 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
       historyService,
       dataService,
       compareService,
+      editorOptimizationBridge,
       performHealthChecks: async () => performHealthChecks(registry),
       cleanup: () => cleanupServices(registry),
       isInitialized: true
@@ -274,19 +308,72 @@ async function performHealthChecks(registry: ServiceRegistry): Promise<ServiceHe
     })
   }
   
+  // FileOperationsService
+  try {
+    const healthy = await registry.fileOperationsService.checkHealth()
+    checks.push({
+      service: 'FileOperationsService',
+      healthy,
+      message: healthy ? 'File operations available' : 'File operations unavailable'
+    })
+  } catch (error) {
+    checks.push({
+      service: 'FileOperationsService',
+      healthy: false,
+      message: 'Failed to check file operations',
+      error: error as Error
+    })
+  }
+  
+  // EditorService
+  try {
+    const healthy = await registry.editorService.checkHealth()
+    checks.push({
+      service: 'EditorService',
+      healthy,
+      message: healthy ? 'Editor service available' : 'Editor service unavailable'
+    })
+  } catch (error) {
+    checks.push({
+      service: 'EditorService',
+      healthy: false,
+      message: 'Failed to check editor service',
+      error: error as Error
+    })
+  }
+  
+  // EditorOptimizationBridge
+  try {
+    const healthy = await registry.editorOptimizationBridge.checkHealth()
+    checks.push({
+      service: 'EditorOptimizationBridge',
+      healthy,
+      message: healthy ? 'Editor-optimization bridge available' : 'Editor-optimization bridge unavailable'
+    })
+  } catch (error) {
+    checks.push({
+      service: 'EditorOptimizationBridge',
+      healthy: false,
+      message: 'Failed to check editor-optimization bridge',
+      error: error as Error
+    })
+  }
+  
   // WebDAV service (if enabled)
   if (registry.webDAVService) {
     try {
-      // TODO: Implement WebDAV health check
+      const healthy = await registry.webDAVService.checkHealth()
+      const status = registry.webDAVService.getConnectionStatus()
       checks.push({
         service: 'WebDAVService',
-        healthy: false,
-        message: 'Not implemented'
+        healthy,
+        message: healthy ? `Connected to ${status.url}` : status.error
       })
     } catch (error) {
       checks.push({
         service: 'WebDAVService',
         healthy: false,
+        message: 'Health check failed',
         error: error as Error
       })
     }
@@ -308,8 +395,26 @@ function cleanupServices(registry: ServiceRegistry): void {
   logger.info('Cleaning up services')
   
   try {
-    // Cleanup in reverse order of initialization
-    // Most services don't need explicit cleanup in web environment
+    // Cleanup in reverse order of initialization to respect dependencies
+    
+    // Cleanup EditorOptimizationBridge (no explicit cleanup method, but good practice)
+    // The bridge doesn't have a cleanup method currently
+    
+    // Cleanup EditorService
+    if (registry.editorService?.cleanup) {
+      registry.editorService.cleanup()
+      logger.debug('EditorService cleaned up')
+    }
+    
+    // Cleanup FileOperationsService (no explicit cleanup needed)
+    
+    // Cleanup WebDAVService
+    if (registry.webDAVService?.cleanup) {
+      registry.webDAVService.cleanup()
+      logger.debug('WebDAVService cleaned up')
+    }
+    
+    // Most core services don't need explicit cleanup in web environment
     // but this provides a hook for future needs
     
     logger.info('Services cleaned up successfully')
