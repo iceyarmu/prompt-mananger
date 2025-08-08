@@ -198,6 +198,7 @@ export type WebDAVOperation =
   | 'disconnect'
   | 'testConnection'
   | 'getFile'
+  | 'getFileRange'
   | 'putFile'
   | 'deleteFile'
   | 'moveFile'

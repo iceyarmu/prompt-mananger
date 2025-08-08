@@ -3,10 +3,10 @@
  * Enhanced editor package with remote file support
  */
 
-import type { WebDAVClient } from '@prompt-optimizer/webdav';
+import type { WebDAVService } from '@prompt-optimizer/webdav';
 
 export interface EditorConfig {
-  webdavClient?: WebDAVClient;
+  webdavClient?: WebDAVService;
   autoSave?: boolean;
   autoSaveInterval?: number;
   theme?: 'light' | 'dark';
@@ -59,7 +59,8 @@ export class EditorService implements Editor {
         if (!this.config.webdavClient) {
           throw new EditorError('WebDAV client not configured', 'WEBDAV_NOT_CONFIGURED');
         }
-        content = await this.config.webdavClient.readFile(path);
+        const fileContent = await this.config.webdavClient.getFile(path);
+        content = fileContent.content;
       } else {
         // TODO: Load from local file system
         // For now, throw an error to indicate not implemented
@@ -90,7 +91,11 @@ export class EditorService implements Editor {
         if (!this.config.webdavClient) {
           throw new EditorError('WebDAV client not configured', 'WEBDAV_NOT_CONFIGURED');
         }
-        await this.config.webdavClient.writeFile(file.path, file.content);
+        await this.config.webdavClient.putFile({
+          path: file.path,
+          content: file.content,
+          mimeType: 'text/plain'
+        });
       } else {
         // TODO: Save to local file system
         throw new EditorError('Local file system not yet implemented', 'NOT_IMPLEMENTED');

@@ -23,6 +23,7 @@
     "test:integration": "vitest run tests/integration"
   },
   "devDependencies": {
+    "@types/diff": "^8.0.0",
     "@types/node": "^20.11.0",
     "dotenv": "^16.4.7",
     "tsup": "^8.0.2",
