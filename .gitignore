@@ -182,3 +182,4 @@ prompt-optimizer-datas
 prompt-optimizer-data
 .bmad-core
 .claude/commands/BMad
+.gemini
