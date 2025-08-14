@@ -204,6 +204,36 @@ export const useEditorStore = defineStore('editor', () => {
     return modifiedFiles.value.size > 0
   }
   
+  // Task 8: Update file path when file is renamed
+  function updateFilePath(newPath: string, newName: string) {
+    if (currentFile.value) {
+      const oldPath = currentFile.value.path
+      
+      // Update the current file object
+      currentFile.value = {
+        ...currentFile.value,
+        path: newPath,
+        name: newName
+      }
+      
+      // Update modified files set if this file was modified
+      if (modifiedFiles.value.has(oldPath)) {
+        modifiedFiles.value.delete(oldPath)
+        modifiedFiles.value.add(newPath)
+      }
+      
+      // Emit event for file path update
+      const { storeBus } = window as any
+      if (storeBus) {
+        storeBus.emit('editor', 'file-path-updated', {
+          oldPath,
+          newPath,
+          newName
+        })
+      }
+    }
+  }
+  
   return {
     currentFile,
     content,
@@ -237,6 +267,7 @@ export const useEditorStore = defineStore('editor', () => {
     saveFile,
     optimizeContent,
     getModifiedFilesList,
-    hasModifiedFiles
+    hasModifiedFiles,
+    updateFilePath
   }
 })

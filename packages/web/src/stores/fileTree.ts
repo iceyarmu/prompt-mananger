@@ -245,6 +245,357 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     searchQuery.value = query
   }
   
+  // Task 8: Context Menu Operations
+  async function createFile(parentPath: string, fileName: string): Promise<boolean> {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const { webdavStore } = await import('./webdav')
+      const store = webdavStore()
+      
+      if (!store.isConnected) {
+        throw new Error('WebDAV not connected')
+      }
+      
+      const { WebDAVService } = await import('@prompt-optimizer/webdav')
+      const webdavService = new WebDAVService()
+      
+      const profile = await store.getProfileWithCredentials(store.activeProfile!.id)
+      
+      await webdavService.connect({
+        url: profile.url,
+        username: profile.username,
+        password: profile.password,
+        authType: profile.username && profile.password ? 'basic' : 'none',
+        timeout: 30000
+      })
+      
+      try {
+        const filePath = `${parentPath}/${fileName}`.replace(/\/+/g, '/')
+        
+        // Create the file with empty content
+        await webdavService.writeFile(filePath, '')
+        
+        // Refresh the parent directory
+        await refreshNode(parentPath)
+        
+        // Emit success event
+        const { storeBus } = await import('./communication')
+        storeBus.emit('fileTree', 'file-created', { 
+          path: filePath,
+          parentPath,
+          fileName
+        })
+        
+        return true
+      } finally {
+        await webdavService.disconnect()
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to create file'
+      
+      // Emit error event
+      const { storeBus } = await import('./communication')
+      storeBus.emit('fileTree', 'error', { 
+        operation: 'create-file',
+        error: error.value
+      })
+      
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  async function createFolder(parentPath: string, folderName: string): Promise<boolean> {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const { webdavStore } = await import('./webdav')
+      const store = webdavStore()
+      
+      if (!store.isConnected) {
+        throw new Error('WebDAV not connected')
+      }
+      
+      const { WebDAVService } = await import('@prompt-optimizer/webdav')
+      const webdavService = new WebDAVService()
+      
+      const profile = await store.getProfileWithCredentials(store.activeProfile!.id)
+      
+      await webdavService.connect({
+        url: profile.url,
+        username: profile.username,
+        password: profile.password,
+        authType: profile.username && profile.password ? 'basic' : 'none',
+        timeout: 30000
+      })
+      
+      try {
+        const folderPath = `${parentPath}/${folderName}`.replace(/\/+/g, '/')
+        
+        // Create the directory
+        await webdavService.createDirectory(folderPath)
+        
+        // Refresh the parent directory
+        await refreshNode(parentPath)
+        
+        // Emit success event
+        const { storeBus } = await import('./communication')
+        storeBus.emit('fileTree', 'folder-created', { 
+          path: folderPath,
+          parentPath,
+          folderName
+        })
+        
+        return true
+      } finally {
+        await webdavService.disconnect()
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to create folder'
+      
+      // Emit error event
+      const { storeBus } = await import('./communication')
+      storeBus.emit('fileTree', 'error', { 
+        operation: 'create-folder',
+        error: error.value
+      })
+      
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  async function renameNode(oldPath: string, newName: string): Promise<boolean> {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const { webdavStore } = await import('./webdav')
+      const store = webdavStore()
+      
+      if (!store.isConnected) {
+        throw new Error('WebDAV not connected')
+      }
+      
+      const { WebDAVService } = await import('@prompt-optimizer/webdav')
+      const webdavService = new WebDAVService()
+      
+      const profile = await store.getProfileWithCredentials(store.activeProfile!.id)
+      
+      await webdavService.connect({
+        url: profile.url,
+        username: profile.username,
+        password: profile.password,
+        authType: profile.username && profile.password ? 'basic' : 'none',
+        timeout: 30000
+      })
+      
+      try {
+        const pathParts = oldPath.split('/')
+        pathParts[pathParts.length - 1] = newName
+        const newPath = pathParts.join('/')
+        
+        // Move/rename the file or folder
+        await webdavService.moveFile(oldPath, newPath)
+        
+        // Refresh the parent directory
+        const parentPath = pathParts.slice(0, -1).join('/') || '/'
+        await refreshNode(parentPath)
+        
+        // Update selection if renamed node was selected
+        if (selectedNode.value?.path === oldPath) {
+          const newNode = findNodeByPath(newPath)
+          if (newNode) {
+            selectNode(newNode)
+          }
+        }
+        
+        // Emit success event
+        const { storeBus } = await import('./communication')
+        storeBus.emit('fileTree', 'node-renamed', { 
+          oldPath,
+          newPath,
+          newName
+        })
+        
+        return true
+      } finally {
+        await webdavService.disconnect()
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to rename'
+      
+      // Emit error event
+      const { storeBus } = await import('./communication')
+      storeBus.emit('fileTree', 'error', { 
+        operation: 'rename',
+        error: error.value
+      })
+      
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  async function deleteNode(path: string): Promise<boolean> {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const { webdavStore } = await import('./webdav')
+      const store = webdavStore()
+      
+      if (!store.isConnected) {
+        throw new Error('WebDAV not connected')
+      }
+      
+      const { WebDAVService } = await import('@prompt-optimizer/webdav')
+      const webdavService = new WebDAVService()
+      
+      const profile = await store.getProfileWithCredentials(store.activeProfile!.id)
+      
+      await webdavService.connect({
+        url: profile.url,
+        username: profile.username,
+        password: profile.password,
+        authType: profile.username && profile.password ? 'basic' : 'none',
+        timeout: 30000
+      })
+      
+      try {
+        // Delete the file or folder
+        await webdavService.deleteFile(path)
+        
+        // Clear selection if deleted node was selected
+        if (selectedNode.value?.path === path) {
+          selectNode(null)
+        }
+        
+        // Refresh the parent directory
+        const pathParts = path.split('/')
+        const parentPath = pathParts.slice(0, -1).join('/') || '/'
+        await refreshNode(parentPath)
+        
+        // Emit success event
+        const { storeBus } = await import('./communication')
+        storeBus.emit('fileTree', 'node-deleted', { 
+          path,
+          parentPath
+        })
+        
+        return true
+      } finally {
+        await webdavService.disconnect()
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to delete'
+      
+      // Emit error event
+      const { storeBus } = await import('./communication')
+      storeBus.emit('fileTree', 'error', { 
+        operation: 'delete',
+        error: error.value
+      })
+      
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  async function duplicateNode(path: string): Promise<boolean> {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const { webdavStore } = await import('./webdav')
+      const store = webdavStore()
+      
+      if (!store.isConnected) {
+        throw new Error('WebDAV not connected')
+      }
+      
+      const { WebDAVService } = await import('@prompt-optimizer/webdav')
+      const webdavService = new WebDAVService()
+      
+      const profile = await store.getProfileWithCredentials(store.activeProfile!.id)
+      
+      await webdavService.connect({
+        url: profile.url,
+        username: profile.username,
+        password: profile.password,
+        authType: profile.username && profile.password ? 'basic' : 'none',
+        timeout: 30000
+      })
+      
+      try {
+        // Generate duplicate name
+        const pathParts = path.split('/')
+        const originalName = pathParts[pathParts.length - 1]
+        const nameWithoutExt = originalName.replace(/\.[^/.]+$/, '')
+        const extension = originalName.includes('.') ? originalName.substring(originalName.lastIndexOf('.')) : ''
+        
+        let copyNumber = 1
+        let duplicatePath = ''
+        let duplicateExists = true
+        
+        // Find a unique name for the duplicate
+        while (duplicateExists) {
+          const duplicateName = `${nameWithoutExt}_copy${copyNumber > 1 ? copyNumber : ''}${extension}`
+          pathParts[pathParts.length - 1] = duplicateName
+          duplicatePath = pathParts.join('/')
+          
+          try {
+            await webdavService.getFile(duplicatePath)
+            copyNumber++
+          } catch {
+            duplicateExists = false
+          }
+        }
+        
+        // Read the original file content
+        const content = await webdavService.readFile(path)
+        
+        // Write to the duplicate path
+        await webdavService.writeFile(duplicatePath, content)
+        
+        // Refresh the parent directory
+        const parentPath = pathParts.slice(0, -1).join('/') || '/'
+        await refreshNode(parentPath)
+        
+        // Emit success event
+        const { storeBus } = await import('./communication')
+        storeBus.emit('fileTree', 'node-duplicated', { 
+          originalPath: path,
+          duplicatePath
+        })
+        
+        return true
+      } finally {
+        await webdavService.disconnect()
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to duplicate'
+      
+      // Emit error event
+      const { storeBus } = await import('./communication')
+      storeBus.emit('fileTree', 'error', { 
+        operation: 'duplicate',
+        error: error.value
+      })
+      
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+  
   return {
     tree,
     selectedNode,
@@ -269,6 +620,12 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     refreshNode,
     setNodeModified,
     clearTree,
-    setSearchQuery
+    setSearchQuery,
+    // Context menu operations
+    createFile,
+    createFolder,
+    renameNode,
+    deleteNode,
+    duplicateNode
   }
 })

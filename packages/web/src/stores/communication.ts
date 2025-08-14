@@ -1,5 +1,4 @@
 import { watch, type WatchStopHandle } from 'vue'
-import type { Store } from 'pinia'
 import { useAppStore } from './app'
 import { useEditorStore } from './editor'
 import { useFileTreeStore } from './fileTree'
@@ -155,7 +154,7 @@ export function setupStoreCommunication() {
   const optimizationStore = useOptimizationStore()
 
   // WebDAV connection affects file tree
-  webdavStore.$subscribe((mutation, state) => {
+  webdavStore.$subscribe((_, state) => {
     if (state.connectionStatus === 'connected' && state.activeProfile) {
       storeBus.emit('webdav', 'connected', { profile: state.activeProfile })
       fileTreeStore.loadTree().catch(error => {
@@ -261,11 +260,37 @@ export function setupStoreCommunication() {
     }
   })
 
-  // File tree refresh on various events
-  storeBus.on('editor', 'file-saved', () => {
-    fileTreeStore.refresh().catch(error => {
-      console.error('Failed to refresh file tree after save:', error)
-    })
+  // Task 2: Wire Editor Save to File Tree Updates
+  storeBus.on('editor', 'file-saved', async (payload) => {
+    // Task 2.2: Update fileTreeStore modified state on save completion
+    if (payload?.path) {
+      // Task 2.3: Clear modified indicator in file tree node
+      fileTreeStore.setNodeModified(payload.path, false)
+      
+      // Task 2.4: Refresh file tree node to show updated timestamp
+      const parentPath = payload.path.substring(0, payload.path.lastIndexOf('/'))
+      
+      try {
+        // Try to refresh just the parent node first (more efficient)
+        await fileTreeStore.refreshNode(parentPath || '/')
+        // Also update editor store
+        editorStore.markFileSaved(payload.path)
+      } catch (error) {
+        // Task 2.5: Handle save errors and maintain modified state
+        console.error('Failed to refresh parent folder after save:', error)
+        fileTreeStore.setNodeModified(payload.path, true)
+        
+        // Fallback: Refresh entire tree only if parent refresh failed
+        try {
+          await fileTreeStore.refresh()
+          // Retry marking as saved after full refresh
+          editorStore.markFileSaved(payload.path)
+          fileTreeStore.setNodeModified(payload.path, false)
+        } catch (refreshError) {
+          console.error('Failed to refresh file tree after save:', refreshError)
+        }
+      }
+    }
   })
 
   storeBus.on('editor', 'file-created', (payload) => {

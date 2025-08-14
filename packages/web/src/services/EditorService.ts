@@ -194,6 +194,13 @@ export class EditorService {
       this.state.isDirty = false
       
       logger.info('File saved successfully', { path: savePath })
+      
+      // Task 2.1: Emit 'file-saved' event from EditorService after successful save
+      const { storeBus } = await import('../stores/communication')
+      storeBus.emit('editor', 'file-saved', { 
+        path: savePath,
+        timestamp: new Date()
+      })
     } catch (error) {
       logger.error('Failed to save file', { path: savePath, error })
       throw error

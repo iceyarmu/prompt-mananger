@@ -10,9 +10,11 @@
       <!-- Left Panel - File Tree -->
       <div 
         ref="leftPanel"
+        data-panel="left"
         class="app-layout__panel app-layout__panel--left"
         :style="{ width: leftPanelWidth }"
         :class="{ 'app-layout__panel--collapsed': isLeftCollapsed }"
+        tabindex="-1"
       >
         <div class="app-layout__panel-header">
           <slot name="left-header"></slot>
@@ -39,8 +41,10 @@
       <!-- Center Panel - Editor -->
       <div 
         ref="centerPanel"
+        data-panel="center"
         class="app-layout__panel app-layout__panel--center"
         :style="{ flex: centerPanelFlex }"
+        tabindex="-1"
       >
         <div class="app-layout__panel-header">
           <slot name="center-header"></slot>
@@ -60,9 +64,11 @@
       <!-- Right Panel - Results -->
       <div 
         ref="rightPanel"
+        data-panel="right"
         class="app-layout__panel app-layout__panel--right"
         :style="{ width: rightPanelWidth }"
         :class="{ 'app-layout__panel--collapsed': isRightCollapsed }"
+        tabindex="-1"
       >
         <div class="app-layout__panel-header">
           <slot name="right-header"></slot>
