@@ -136,8 +136,8 @@ export function useEditorOptimization(content: Ref<string>) {
   
   // Keyboard shortcut handler
   const handleKeyboardShortcut = (event: KeyboardEvent) => {
-    // Ctrl+Shift+O or Cmd+Shift+O for optimization
-    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'o') {
+    // Ctrl+Alt+O or Cmd+Alt+O for optimization
+    if ((event.ctrlKey || event.metaKey) && event.altKey && event.key === 'o') {
       event.preventDefault();
       
       if (content.value && !optimizing.value) {

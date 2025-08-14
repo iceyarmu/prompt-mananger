@@ -36,6 +36,7 @@
               ]"
               :disabled="!content || optimizing"
               :aria-label="$t('editor.optimize', 'Optimize')"
+              :title="$t('editor.optimizeTooltip', 'Optimize prompt (Ctrl+Alt+O / Cmd+Alt+O)')"
               @click="openOptimizationModal"
             >
               <svg v-if="!optimizing" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
