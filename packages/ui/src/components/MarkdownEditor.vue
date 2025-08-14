@@ -80,6 +80,7 @@
               ]"
               :disabled="!content || executing || !selectedExecutionModel"
               :aria-label="$t('editor.execute', 'Execute')"
+              :title="$t('editor.executeTooltip', 'Execute prompt (Ctrl+Shift+E / Cmd+Shift+E)')"
               @click="executePrompt"
             >
               <svg v-if="!executing" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,7 +162,7 @@
 <script setup lang="ts">
 import { MdEditor } from 'md-editor-v3';
 import 'md-editor-v3/lib/style.css';
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useMarkdownEditor } from '../composables/useMarkdownEditor';
 import { useEditorOptimization } from '../composables/useEditorOptimization';
 import { usePromptExecution } from '../composables/usePromptExecution';
@@ -216,6 +217,27 @@ const {
   showModelManager,
   executePrompt
 } = usePromptExecution(content);
+
+// Keyboard shortcut handler
+const handleKeydown = (event: KeyboardEvent) => {
+  // Check for Ctrl+Shift+E or Cmd+Shift+E
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'E') {
+    event.preventDefault();
+    // Only execute if not already executing and has content and model selected
+    if (!executing.value && content.value && selectedExecutionModel.value) {
+      executePrompt();
+    }
+  }
+};
+
+// Setup keyboard event listeners
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown);
+});
 </script>
 
 <style scoped>

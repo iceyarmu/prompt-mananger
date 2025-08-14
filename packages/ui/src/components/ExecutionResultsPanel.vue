@@ -96,6 +96,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import type { ExecutionResult } from '../services/PromptExecutionHandler'
 
@@ -110,6 +111,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const toast = useToast()
+const { copyText } = useClipboard()
 
 // Display content
 const displayContent = computed(() => {
@@ -127,13 +129,7 @@ const getProviderIcon = (model: string) => {
 // Copy result to clipboard
 const copyResult = async () => {
   if (!props.result?.content) return
-  
-  try {
-    await navigator.clipboard.writeText(props.result.content)
-    toast.success(t('toast.success.copied', 'Copied to clipboard'))
-  } catch (error) {
-    toast.error(t('toast.error.copyFailed', 'Failed to copy'))
-  }
+  await copyText(props.result.content)
 }
 
 // Export result as JSON

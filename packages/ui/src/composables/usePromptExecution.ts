@@ -1,4 +1,4 @@
-import { ref, inject, computed, type Ref } from 'vue'
+import { ref, inject, computed, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from './useToast'
 import { usePreferences } from './usePreferenceManager'
@@ -27,8 +27,9 @@ export function usePromptExecution(content: Ref<string>) {
   const executionResult = ref<ExecutionResult | null>(null)
   const showExecutionResults = ref(false)
   const showModelManager = ref(false)
+  const executionHistory = ref<ExecutionResult[]>([])
   
-  // Initialize model selection
+  // Initialize model selection and options
   const initializeModel = async () => {
     try {
       // Load saved model preference
@@ -44,6 +45,20 @@ export function usePromptExecution(content: Ref<string>) {
           executionOptions.value.model = models[0].key
         }
       }
+      
+      // Load saved execution options
+      const savedTemp = await getPreference('execution_temperature', 0.7)
+      const savedMaxTokens = await getPreference('execution_maxTokens', 2000)
+      const savedSystemPrompt = await getPreference('execution_systemPrompt', '')
+      const savedStreaming = await getPreference('execution_streaming', true)
+      
+      executionOptions.value.temperature = savedTemp
+      executionOptions.value.maxTokens = savedMaxTokens
+      executionOptions.value.systemPrompt = savedSystemPrompt
+      executionOptions.value.streaming = savedStreaming
+      
+      // Load execution history
+      loadExecutionHistory()
     } catch (error) {
       console.error('Failed to initialize execution model:', error)
     }
@@ -59,12 +74,87 @@ export function usePromptExecution(content: Ref<string>) {
     }
   }
   
+  // Save execution options
+  const saveExecutionOptions = async () => {
+    try {
+      await setPreference('execution_temperature', executionOptions.value.temperature)
+      await setPreference('execution_maxTokens', executionOptions.value.maxTokens)
+      await setPreference('execution_systemPrompt', executionOptions.value.systemPrompt)
+      await setPreference('execution_streaming', executionOptions.value.streaming)
+    } catch (error) {
+      console.error('Failed to save execution options:', error)
+    }
+  }
+  
   // Watch for model changes
   const watchModelChange = () => {
     // This will be called when selectedExecutionModel changes
     if (selectedExecutionModel.value) {
       saveModelSelection(selectedExecutionModel.value)
     }
+  }
+  
+  // Watch for options changes
+  const watchOptionsChange = () => {
+    saveExecutionOptions()
+  }
+  
+  // History Management
+  const HISTORY_KEY = 'execution_history'
+  const MAX_HISTORY_ENTRIES = 100
+  
+  const loadExecutionHistory = () => {
+    try {
+      const stored = localStorage.getItem(HISTORY_KEY)
+      if (stored) {
+        executionHistory.value = JSON.parse(stored)
+      }
+    } catch (error) {
+      console.error('Failed to load execution history:', error)
+      executionHistory.value = []
+    }
+  }
+  
+  const saveToHistory = (result: ExecutionResult) => {
+    // Add to history with timestamp and model info
+    const historyEntry = {
+      ...result,
+      id: Date.now().toString(),
+      prompt: content.value, // Save the original prompt
+      timestamp: new Date()
+    }
+    
+    // Add to beginning of array (most recent first)
+    executionHistory.value.unshift(historyEntry)
+    
+    // Limit to MAX_HISTORY_ENTRIES
+    if (executionHistory.value.length > MAX_HISTORY_ENTRIES) {
+      executionHistory.value = executionHistory.value.slice(0, MAX_HISTORY_ENTRIES)
+    }
+    
+    // Save to localStorage
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(executionHistory.value))
+    } catch (error) {
+      console.error('Failed to save execution history:', error)
+      // If localStorage is full, remove oldest entries
+      if (error instanceof Error && error.name === 'QuotaExceededError') {
+        executionHistory.value = executionHistory.value.slice(0, 50)
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(executionHistory.value))
+        } catch {
+          // If still failing, clear some history
+          executionHistory.value = executionHistory.value.slice(0, 20)
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(executionHistory.value))
+        }
+      }
+    }
+  }
+  
+  const clearExecutionHistory = () => {
+    executionHistory.value = []
+    localStorage.removeItem(HISTORY_KEY)
+    toast.success(t('toast.success.historyCleared', 'Execution history cleared'))
   }
   
   // Execute prompt
@@ -97,6 +187,10 @@ export function usePromptExecution(content: Ref<string>) {
       )
       
       executionResult.value = result
+      
+      // Save to execution history
+      saveToHistory(result)
+      
       toast.success(t('toast.success.executionComplete', 'Execution completed'))
       
     } catch (error) {
@@ -112,6 +206,18 @@ export function usePromptExecution(content: Ref<string>) {
   // Initialize on mount
   initializeModel()
   
+  // Watch for model changes
+  watch(selectedExecutionModel, (newModel) => {
+    if (newModel) {
+      saveModelSelection(newModel)
+    }
+  })
+  
+  // Watch for options changes
+  watch(executionOptions, () => {
+    saveExecutionOptions()
+  }, { deep: true })
+  
   return {
     executing,
     selectedExecutionModel,
@@ -120,6 +226,9 @@ export function usePromptExecution(content: Ref<string>) {
     showExecutionResults,
     showModelManager,
     executePrompt,
-    watchModelChange
+    watchModelChange,
+    watchOptionsChange,
+    executionHistory,
+    clearExecutionHistory
   }
 }
