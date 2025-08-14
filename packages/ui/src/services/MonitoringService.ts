@@ -1,11 +1,25 @@
 export class MonitoringService {
   private performanceObserver: PerformanceObserver;
   private errorQueue: Error[] = [];
+  private systemMetrics: {
+    currentSystem: 'old' | 'new';
+    switchCount: number;
+    errorsBySystem: { old: number; new: number };
+    performanceBySystem: { old: number[]; new: number[] };
+    lastSwitch: number;
+  } = {
+    currentSystem: 'old',
+    switchCount: 0,
+    errorsBySystem: { old: 0, new: 0 },
+    performanceBySystem: { old: [], new: [] },
+    lastSwitch: 0
+  };
   
   constructor() {
     this.setupPerformanceMonitoring();
     this.setupErrorTracking();
     this.setupAnalytics();
+    this.setupCutoverMonitoring();
   }
   
   private setupPerformanceMonitoring() {
@@ -368,5 +382,199 @@ export class MonitoringService {
       value,
       timestamp: Date.now()
     });
+  }
+  
+  // System Cutover Monitoring Methods
+  private setupCutoverMonitoring() {
+    // Listen for system switch events
+    window.addEventListener('system-switched', (event: any) => {
+      this.trackSystemSwitch(event.detail?.system || 'unknown');
+    });
+    
+    // Monitor performance by system
+    this.trackSystemPerformance();
+    
+    // Setup cutover-specific dashboards
+    this.initializeCutoverDashboard();
+  }
+  
+  public trackSystemSwitch(newSystem: 'old' | 'new') {
+    const previousSystem = this.systemMetrics.currentSystem;
+    this.systemMetrics.currentSystem = newSystem;
+    this.systemMetrics.switchCount++;
+    this.systemMetrics.lastSwitch = Date.now();
+    
+    // Track the switch event
+    this.sendAnalytic('system_cutover_switch', {
+      from: previousSystem,
+      to: newSystem,
+      switchCount: this.systemMetrics.switchCount,
+      timestamp: Date.now(),
+      sessionId: this.getSessionId()
+    });
+    
+    // Track adoption metrics
+    this.trackAdoptionRate();
+  }
+  
+  public trackSystemError(error: Error, system: 'old' | 'new') {
+    this.systemMetrics.errorsBySystem[system]++;
+    
+    this.sendMetric({
+      name: 'system_error',
+      system,
+      errorCount: this.systemMetrics.errorsBySystem[system],
+      errorMessage: error.message,
+      timestamp: Date.now()
+    });
+    
+    // Alert if error rate is high
+    const errorRate = this.calculateErrorRate(system);
+    if (errorRate > 0.05) { // 5% error rate threshold
+      this.sendAlert('high_cutover_error_rate', {
+        system,
+        errorRate,
+        threshold: 0.05,
+        errorCount: this.systemMetrics.errorsBySystem[system]
+      });
+    }
+  }
+  
+  public trackSystemPerformance() {
+    setInterval(() => {
+      const system = this.systemMetrics.currentSystem;
+      const performance = this.measureSystemPerformance();
+      
+      this.systemMetrics.performanceBySystem[system].push(performance);
+      
+      // Keep only last 100 measurements
+      if (this.systemMetrics.performanceBySystem[system].length > 100) {
+        this.systemMetrics.performanceBySystem[system].shift();
+      }
+      
+      // Send performance comparison
+      this.sendMetric({
+        name: 'system_performance_comparison',
+        currentSystem: system,
+        performance,
+        oldSystemAvg: this.calculateAverage(this.systemMetrics.performanceBySystem.old),
+        newSystemAvg: this.calculateAverage(this.systemMetrics.performanceBySystem.new),
+        timestamp: Date.now()
+      });
+      
+      // Alert if new system performs worse
+      if (system === 'new' && performance > this.calculateAverage(this.systemMetrics.performanceBySystem.old) * 1.2) {
+        this.sendAlert('new_system_performance_degradation', {
+          currentPerformance: performance,
+          oldSystemAverage: this.calculateAverage(this.systemMetrics.performanceBySystem.old),
+          degradation: performance / this.calculateAverage(this.systemMetrics.performanceBySystem.old)
+        });
+      }
+    }, 60000); // Every minute
+  }
+  
+  private measureSystemPerformance(): number {
+    // Measure current system performance
+    const navTiming = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+    if (navTiming) {
+      return navTiming.loadEventEnd - navTiming.fetchStart;
+    }
+    return 0;
+  }
+  
+  private calculateErrorRate(system: 'old' | 'new'): number {
+    const totalRequests = 1000; // Assume 1000 requests as baseline
+    return this.systemMetrics.errorsBySystem[system] / totalRequests;
+  }
+  
+  private calculateAverage(numbers: number[]): number {
+    if (numbers.length === 0) return 0;
+    return numbers.reduce((a, b) => a + b, 0) / numbers.length;
+  }
+  
+  public trackAdoptionRate() {
+    // Track how many users are on each system
+    this.sendMetric({
+      name: 'cutover_adoption_rate',
+      system: this.systemMetrics.currentSystem,
+      switchCount: this.systemMetrics.switchCount,
+      timeSinceLastSwitch: Date.now() - this.systemMetrics.lastSwitch,
+      timestamp: Date.now()
+    });
+  }
+  
+  public trackCutoverSuccess(metric: string, value: number) {
+    this.sendMetric({
+      name: 'cutover_success_metric',
+      metric,
+      value,
+      system: this.systemMetrics.currentSystem,
+      timestamp: Date.now()
+    });
+  }
+  
+  private initializeCutoverDashboard() {
+    // Create dashboard data structure
+    const dashboard = {
+      adoptionRate: 0,
+      errorRates: { old: 0, new: 0 },
+      performanceMetrics: { old: 0, new: 0 },
+      switchCount: 0,
+      activeUsers: { old: 0, new: 0 },
+      lastUpdated: Date.now()
+    };
+    
+    // Update dashboard every 30 seconds
+    setInterval(() => {
+      dashboard.adoptionRate = this.calculateAdoptionRate();
+      dashboard.errorRates = {
+        old: this.calculateErrorRate('old'),
+        new: this.calculateErrorRate('new')
+      };
+      dashboard.performanceMetrics = {
+        old: this.calculateAverage(this.systemMetrics.performanceBySystem.old),
+        new: this.calculateAverage(this.systemMetrics.performanceBySystem.new)
+      };
+      dashboard.switchCount = this.systemMetrics.switchCount;
+      dashboard.lastUpdated = Date.now();
+      
+      // Send dashboard update
+      this.sendAnalytic('cutover_dashboard_update', dashboard);
+      
+      // Store in localStorage for UI display
+      localStorage.setItem('cutoverDashboard', JSON.stringify(dashboard));
+    }, 30000);
+  }
+  
+  private calculateAdoptionRate(): number {
+    // In a real scenario, this would query actual user distribution
+    // For now, return a simulated value based on switch count
+    return Math.min(this.systemMetrics.switchCount * 10, 100);
+  }
+  
+  public getCutoverMetrics() {
+    return {
+      ...this.systemMetrics,
+      dashboard: JSON.parse(localStorage.getItem('cutoverDashboard') || '{}')
+    };
+  }
+  
+  // Comparison metrics between old and new systems
+  public trackComparisonMetric(metricName: string, oldValue: number, newValue: number) {
+    const improvement = ((newValue - oldValue) / oldValue) * 100;
+    
+    this.sendMetric({
+      name: 'system_comparison',
+      metric: metricName,
+      oldSystemValue: oldValue,
+      newSystemValue: newValue,
+      improvement: improvement,
+      timestamp: Date.now()
+    });
+    
+    // Track if new system is performing better
+    if (improvement > 0) {
+      this.trackCutoverSuccess(`${metricName}_improvement`, improvement);
+    }
   }
 }

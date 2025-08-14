@@ -50,6 +50,11 @@ export class FeatureFlagService {
   private loadDefaultFlags() {
     const defaultFlags: FeatureFlag[] = [
       {
+        key: 'new_platform_enabled',
+        enabled: true,
+        rolloutPercentage: 0
+      },
+      {
         key: 'webdav_integration',
         enabled: true,
         rolloutPercentage: 100
@@ -357,6 +362,60 @@ export class FeatureFlagService {
       }
     };
   }
+  
+  // Admin control methods for cutover
+  updateFlagPercentage(flagKey: string, percentage: number) {
+    const flag = this.flags.get(flagKey);
+    if (flag) {
+      flag.rolloutPercentage = Math.max(0, Math.min(100, percentage));
+      this.flags.set(flagKey, flag);
+      this.notifyListeners(flagKey);
+      
+      // Persist to server
+      this.persistFlagUpdate(flagKey, flag);
+    }
+  }
+  
+  private async persistFlagUpdate(flagKey: string, flag: FeatureFlag) {
+    try {
+      await fetch(`/api/feature-flags/${flagKey}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': this.userId
+        },
+        body: JSON.stringify(flag)
+      });
+    } catch (error) {
+      console.error('Failed to persist flag update:', error);
+    }
+  }
+  
+  // Get rollout status for monitoring
+  getRolloutStatus(flagKey: string): { percentage: number; usersAffected: number; variant: string } {
+    const flag = this.flags.get(flagKey);
+    if (!flag) {
+      return { percentage: 0, usersAffected: 0, variant: 'disabled' };
+    }
+    
+    const isCurrentUserEnabled = this.isEnabled(flagKey);
+    const variant = this.getVariant(flagKey);
+    
+    return {
+      percentage: flag.rolloutPercentage,
+      usersAffected: Math.floor(flag.rolloutPercentage),
+      variant: isCurrentUserEnabled ? variant : 'disabled'
+    };
+  }
+  
+  // System cutover specific methods
+  isNewPlatformEnabled(): boolean {
+    return this.isEnabled('new_platform_enabled');
+  }
+  
+  getCutoverVariant(): 'old_system' | 'new_system' {
+    return this.isNewPlatformEnabled() ? 'new_system' : 'old_system';
+  }
 }
 
 // Vue composable
@@ -372,6 +431,11 @@ export function useFeatureFlags() {
     },
     getVariant: (experimentKey: string) => flagService.getVariant(experimentKey),
     onFlagChange: (flagKey: string, callback: Function) => 
-      flagService.onFlagChange(flagKey, callback)
+      flagService.onFlagChange(flagKey, callback),
+    isNewPlatformEnabled: () => flagService.isNewPlatformEnabled(),
+    getCutoverVariant: () => flagService.getCutoverVariant(),
+    updateFlagPercentage: (flagKey: string, percentage: number) => 
+      flagService.updateFlagPercentage(flagKey, percentage),
+    getRolloutStatus: (flagKey: string) => flagService.getRolloutStatus(flagKey)
   };
 }

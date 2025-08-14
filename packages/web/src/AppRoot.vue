@@ -2,7 +2,13 @@
   <div id="app-root">
     <ErrorBoundary>
       <template v-if="isInitialized">
-        <AppContent />
+        <SystemRouter 
+          component-name="AppContent"
+          :show-indicator="showSystemIndicator"
+          @system-switched="handleSystemSwitch"
+          @component-error="handleComponentError"
+          @fallback-triggered="handleFallback"
+        />
       </template>
       <template v-else>
         <AppLoading :status="initializationStatus" :error="initializationError" />
@@ -17,7 +23,7 @@
 import { ref, onMounted, inject, onErrorCaptured, onUnmounted } from 'vue'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 import AppLoading from './components/AppLoading.vue'
-import AppContent from './AppContent.vue'
+import SystemRouter from './components/SystemRouter.vue'
 import { Toast } from '@prompt-optimizer/ui'
 import { useToast } from '@prompt-optimizer/ui/composables/useToast'
 import { useStoreCommunication } from './stores/communication'
@@ -36,6 +42,7 @@ const { subscribe, cleanup: cleanupSubscriptions } = useStoreCommunication()
 const isInitialized = ref(false)
 const initializationStatus = ref('Starting application...')
 const initializationError = ref<Error | null>(null)
+const showSystemIndicator = ref(import.meta.env.DEV)
 
 // Task 5.1: Subscribe to global error events
 subscribe('*', 'error', (payload) => {
@@ -78,6 +85,37 @@ subscribe('*', 'success', (payload) => {
     toast.success(message, payload?.duration || 3000)
   }
 })
+
+// System Router handlers
+function handleSystemSwitch(system: 'old' | 'new') {
+  logger.info(`System switched to ${system}`, { system });
+  
+  // Track system switch
+  if ((window as any).analytics) {
+    (window as any).analytics.track('system_cutover', {
+      system,
+      timestamp: Date.now(),
+      userId: localStorage.getItem('userId')
+    });
+  }
+  
+  // Notify user of system change
+  if (system === 'new') {
+    toast.info('You are now using the new platform!', 5000);
+  } else {
+    toast.info('Switched back to the classic system', 5000);
+  }
+}
+
+function handleComponentError(error: Error) {
+  logger.error('Component loading error', { error });
+  toast.error('Failed to load component. Please refresh the page.', 0);
+}
+
+function handleFallback(reason: string) {
+  logger.warn('Fallback triggered', { reason });
+  toast.warning('Falling back to classic system due to an issue', 5000);
+}
 
 // Lifecycle management
 onMounted(async () => {
