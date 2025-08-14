@@ -16,6 +16,11 @@ export interface FileOperationResult {
   success: boolean
   message?: string
   error?: Error
+  conflict?: {
+    local: FileContent
+    remote: FileContent
+    detectedAt: Date
+  }
 }
 
 export interface FileContent {
@@ -91,8 +96,21 @@ export class FileOperationsService {
   /**
    * Write file content to WebDAV and local storage
    */
-  async write(path: string, content: string): Promise<FileOperationResult> {
+  async write(path: string, content: string, checkConflict: boolean = false): Promise<FileOperationResult> {
     logger.debug('Writing file', { path, contentLength: content.length })
+    
+    // Check for conflicts if requested
+    if (checkConflict) {
+      const conflict = await this.detectConflict(path, content)
+      if (conflict) {
+        return {
+          success: false,
+          message: 'Conflict detected',
+          error: new Error('CONFLICT'),
+          conflict
+        }
+      }
+    }
     
     const results: FileOperationResult[] = []
     
@@ -410,5 +428,322 @@ export class FileOperationsService {
     const key = this.storagePrefix + path
     const data = await this.storageService.get(key)
     return data !== null && data !== undefined
+  }
+  
+  /**
+   * Create a new file
+   */
+  async createFile(path: string, content: string = ''): Promise<FileOperationResult> {
+    logger.debug('Creating file', { path, contentLength: content.length })
+    
+    // Check if file already exists
+    const fileExists = await this.exists(path)
+    if (fileExists) {
+      return {
+        success: false,
+        message: 'File already exists',
+        error: new Error('File already exists')
+      }
+    }
+    
+    // Write the new file
+    return this.write(path, content)
+  }
+  
+  /**
+   * Create a new folder
+   */
+  async createFolder(path: string): Promise<FileOperationResult> {
+    logger.debug('Creating folder', { path })
+    
+    const results: FileOperationResult[] = []
+    
+    // Create folder in WebDAV if available
+    if (this.webDAVService) {
+      try {
+        const connectionStatus = this.webDAVService.getConnectionStatus()
+        if (connectionStatus.connected) {
+          await this.webDAVService.createDirectory(path)
+          logger.info('Folder created in WebDAV', { path })
+          results.push({ success: true, message: 'Created in WebDAV' })
+        }
+      } catch (error) {
+        logger.error('WebDAV folder creation failed', { path, error })
+        results.push({ 
+          success: false, 
+          message: 'WebDAV folder creation failed', 
+          error: error as Error 
+        })
+      }
+    }
+    
+    // Create folder marker in local storage
+    try {
+      const key = this.storagePrefix + path + '/.folder'
+      await this.storageService.set(key, {
+        isDirectory: true,
+        created: Date.now()
+      })
+      logger.info('Folder marker created in local storage', { path })
+      results.push({ success: true, message: 'Created in local storage' })
+    } catch (error) {
+      logger.error('Local storage folder creation failed', { path, error })
+      results.push({ 
+        success: false, 
+        message: 'Local storage folder creation failed', 
+        error: error as Error 
+      })
+    }
+    
+    // Return success if at least one creation succeeded
+    const anySuccess = results.some(r => r.success)
+    return {
+      success: anySuccess,
+      message: results.map(r => r.message).join('; '),
+      error: anySuccess ? undefined : results.find(r => r.error)?.error
+    }
+  }
+  
+  /**
+   * Copy file to new location
+   */
+  async copy(sourcePath: string, destinationPath: string): Promise<FileOperationResult> {
+    logger.debug('Copying file', { sourcePath, destinationPath })
+    
+    // Read source file
+    let content: string
+    try {
+      const fileContent = await this.read(sourcePath)
+      content = fileContent.content
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to read source file',
+        error: error as Error
+      }
+    }
+    
+    // Write to destination
+    const writeResult = await this.write(destinationPath, content)
+    if (writeResult.success) {
+      logger.info('File copied successfully', { sourcePath, destinationPath })
+    }
+    
+    return writeResult
+  }
+  
+  /**
+   * Duplicate file with auto-generated name
+   */
+  async duplicate(path: string): Promise<FileOperationResult> {
+    logger.debug('Duplicating file', { path })
+    
+    // Generate duplicate filename
+    const pathParts = path.split('/')
+    const fileName = pathParts.pop() || ''
+    const directory = pathParts.join('/') || '/'
+    
+    // Extract base name and extension
+    const lastDotIndex = fileName.lastIndexOf('.')
+    let baseName = fileName
+    let extension = ''
+    if (lastDotIndex > 0) {
+      baseName = fileName.substring(0, lastDotIndex)
+      extension = fileName.substring(lastDotIndex)
+    }
+    
+    // Find unique name for duplicate
+    let duplicateName = `${baseName}_copy${extension}`
+    let duplicatePath = directory === '/' ? `/${duplicateName}` : `${directory}/${duplicateName}`
+    let counter = 1
+    
+    while (await this.exists(duplicatePath)) {
+      counter++
+      duplicateName = `${baseName}_copy_${counter}${extension}`
+      duplicatePath = directory === '/' ? `/${duplicateName}` : `${directory}/${duplicateName}`
+    }
+    
+    // Copy to duplicate path
+    const result = await this.copy(path, duplicatePath)
+    if (result.success) {
+      result.message = `File duplicated as ${duplicateName}`
+    }
+    
+    return result
+  }
+  
+  /**
+   * Detect conflicts between local and remote versions
+   */
+  private async detectConflict(path: string, newContent: string): Promise<FileOperationResult['conflict'] | null> {
+    try {
+      // Get local version
+      let localContent: FileContent | null = null
+      try {
+        localContent = await this.readFromLocalStorage(path)
+      } catch {
+        // No local version, no conflict
+      }
+      
+      // Get remote version
+      let remoteContent: FileContent | null = null
+      if (this.webDAVService) {
+        try {
+          const connectionStatus = this.webDAVService.getConnectionStatus()
+          if (connectionStatus.connected) {
+            const content = await this.webDAVService.readFile(path)
+            remoteContent = {
+              path,
+              content,
+              metadata: {
+                name: path.split('/').pop() || '',
+                path,
+                size: content.length,
+                lastModified: new Date(),
+                isDirectory: false
+              }
+            }
+          }
+        } catch {
+          // No remote version or error reading
+        }
+      }
+      
+      // Check for conflict
+      if (localContent && remoteContent) {
+        // If both exist and are different from new content
+        if (localContent.content !== newContent && 
+            remoteContent.content !== newContent &&
+            localContent.content !== remoteContent.content) {
+          return {
+            local: localContent,
+            remote: remoteContent,
+            detectedAt: new Date()
+          }
+        }
+      }
+      
+      return null
+    } catch (error) {
+      logger.warn('Error detecting conflict', { path, error })
+      return null
+    }
+  }
+  
+  /**
+   * Resolve a conflict by choosing a version
+   */
+  async resolveConflict(
+    path: string, 
+    resolution: 'local' | 'remote' | 'both' | 'custom',
+    customContent?: string
+  ): Promise<FileOperationResult> {
+    logger.info('Resolving conflict', { path, resolution })
+    
+    let contentToWrite: string
+    
+    switch (resolution) {
+      case 'local':
+        const localContent = await this.readFromLocalStorage(path)
+        contentToWrite = localContent.content
+        break
+        
+      case 'remote':
+        if (!this.webDAVService) {
+          return {
+            success: false,
+            message: 'WebDAV not available',
+            error: new Error('WebDAV not available')
+          }
+        }
+        contentToWrite = await this.webDAVService.readFile(path)
+        break
+        
+      case 'both':
+        // Keep both versions with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const basePath = path.substring(0, path.lastIndexOf('.'))
+        const extension = path.substring(path.lastIndexOf('.'))
+        const conflictPath = `${basePath}_conflict_${timestamp}${extension}`
+        
+        // Save local version with timestamp
+        const local = await this.readFromLocalStorage(path)
+        await this.write(conflictPath, local.content)
+        
+        // Use remote version for main file
+        if (!this.webDAVService) {
+          return {
+            success: false,
+            message: 'WebDAV not available',
+            error: new Error('WebDAV not available')
+          }
+        }
+        contentToWrite = await this.webDAVService.readFile(path)
+        break
+        
+      case 'custom':
+        if (!customContent) {
+          return {
+            success: false,
+            message: 'Custom content required',
+            error: new Error('Custom content required')
+          }
+        }
+        contentToWrite = customContent
+        break
+        
+      default:
+        return {
+          success: false,
+          message: 'Invalid resolution type',
+          error: new Error('Invalid resolution type')
+        }
+    }
+    
+    // Write without conflict check to force update
+    return this.write(path, contentToWrite, false)
+  }
+  
+  /**
+   * Get file metadata
+   */
+  async getMetadata(path: string): Promise<FileMetadata> {
+    logger.debug('Getting file metadata', { path })
+    
+    // Try WebDAV first if available
+    if (this.webDAVService) {
+      try {
+        const connectionStatus = this.webDAVService.getConnectionStatus()
+        if (connectionStatus.connected) {
+          const stats = await this.webDAVService.getFileStat(path)
+          return {
+            name: path.split('/').pop() || '',
+            path,
+            size: stats.size,
+            lastModified: stats.lastModified,
+            isDirectory: stats.isDirectory,
+            contentType: stats.contentType
+          }
+        }
+      } catch (error) {
+        logger.warn('WebDAV metadata fetch failed', { path, error })
+      }
+    }
+    
+    // Fallback to local storage
+    const key = this.storagePrefix + path
+    const data = await this.storageService.get(key)
+    
+    if (!data) {
+      throw new Error(`File not found: ${path}`)
+    }
+    
+    return data.metadata || {
+      name: path.split('/').pop() || '',
+      path,
+      size: (data.content || '').length,
+      lastModified: new Date(data.lastModified || Date.now()),
+      isDirectory: false
+    }
   }
 }

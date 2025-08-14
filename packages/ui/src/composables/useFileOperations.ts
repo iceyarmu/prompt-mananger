@@ -8,6 +8,7 @@ export interface FileOperationsHandler {
   createFolder: (parentPath: string, name: string) => Promise<void>
   renameItem: (oldPath: string, newName: string) => Promise<void>
   deleteItem: (path: string) => Promise<void>
+  duplicateItem: (path: string) => Promise<void>
   copyPath: (path: string) => Promise<void>
 }
 
@@ -20,14 +21,56 @@ export interface UndoableOperation {
   timestamp: number
 }
 
+export interface OperationLock {
+  path: string
+  operation: string
+  timestamp: number
+}
+
 const undoableOperations = ref<Map<string, UndoableOperation>>(new Map())
 const undoTimers = new Map<string, NodeJS.Timeout>()
+const operationLocks = ref<Map<string, OperationLock>>(new Map())
+const LOCK_TIMEOUT = 5000 // 5 seconds lock timeout
 
 export function useFileOperations(services: Ref<AppServices | null>) {
   const { success, error, warning } = useToast()
   const fileTreeStore = useFileTreeStore()
   
   const loading = ref(false)
+  
+  // Helper to acquire operation lock
+  const acquireLock = (path: string, operation: string): boolean => {
+    const lockKey = `${path}:${operation}`
+    const existingLock = operationLocks.value.get(lockKey)
+    
+    // Check if lock exists and is still valid
+    if (existingLock) {
+      const now = Date.now()
+      if (now - existingLock.timestamp < LOCK_TIMEOUT) {
+        return false // Lock still valid, operation blocked
+      }
+    }
+    
+    // Acquire new lock
+    operationLocks.value.set(lockKey, {
+      path,
+      operation,
+      timestamp: Date.now()
+    })
+    
+    // Auto-release lock after timeout
+    setTimeout(() => {
+      releaseLock(path, operation)
+    }, LOCK_TIMEOUT)
+    
+    return true
+  }
+  
+  // Helper to release operation lock
+  const releaseLock = (path: string, operation: string): void => {
+    const lockKey = `${path}:${operation}`
+    operationLocks.value.delete(lockKey)
+  }
 
   const createFile = async (parentPath: string, name: string): Promise<void> => {
     if (!services.value) {
@@ -91,6 +134,12 @@ export function useFileOperations(services: Ref<AppServices | null>) {
       throw new Error('Services not available')
     }
 
+    // Acquire lock to prevent race conditions
+    if (!acquireLock(oldPath, 'rename')) {
+      warning('Another operation is in progress on this file. Please wait.')
+      throw new Error('Operation locked')
+    }
+
     loading.value = true
     try {
       // Construct new path
@@ -116,6 +165,7 @@ export function useFileOperations(services: Ref<AppServices | null>) {
       error(message)
       throw err
     } finally {
+      releaseLock(oldPath, 'rename')
       loading.value = false
     }
   }
@@ -124,6 +174,12 @@ export function useFileOperations(services: Ref<AppServices | null>) {
     if (!services.value) {
       error('Services not available')
       throw new Error('Services not available')
+    }
+
+    // Acquire lock to prevent race conditions
+    if (!acquireLock(path, 'delete')) {
+      warning('Another operation is in progress on this file. Please wait.')
+      throw new Error('Operation locked')
     }
 
     loading.value = true
@@ -187,6 +243,7 @@ export function useFileOperations(services: Ref<AppServices | null>) {
       error(message)
       throw err
     } finally {
+      releaseLock(path, 'delete')
       loading.value = false
     }
   }
@@ -230,6 +287,55 @@ export function useFileOperations(services: Ref<AppServices | null>) {
     }
   }
 
+  const duplicateItem = async (path: string): Promise<void> => {
+    if (!services.value) {
+      error('Services not available')
+      throw new Error('Services not available')
+    }
+
+    loading.value = true
+    try {
+      // Get file content
+      const fileContent = await services.value.webdavService.getFile(path)
+      
+      // Generate duplicate filename
+      const pathParts = path.split('/')
+      const fileName = pathParts[pathParts.length - 1]
+      const fileNameWithoutExt = fileName.replace(/\.md$/, '')
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
+      
+      // Find a unique name for the duplicate
+      let duplicateName = `${fileNameWithoutExt}_copy.md`
+      let duplicatePath = parentPath === '/' ? `/${duplicateName}` : `${parentPath}/${duplicateName}`
+      let counter = 1
+      
+      // Check if file exists and increment counter
+      const items = await services.value.webdavService.listFolder(parentPath)
+      while (items.some(item => item.path === duplicatePath)) {
+        counter++
+        duplicateName = `${fileNameWithoutExt}_copy_${counter}.md`
+        duplicatePath = parentPath === '/' ? `/${duplicateName}` : `${parentPath}/${duplicateName}`
+      }
+      
+      // Create duplicate file
+      await services.value.webdavService.putFile({
+        path: duplicatePath,
+        content: fileContent.content
+      })
+      
+      // Refresh parent folder
+      await fileTreeStore.refreshNode(parentPath)
+      
+      success(`Duplicated as "${duplicateName}"`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to duplicate item'
+      error(message)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   const copyPath = async (path: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(path)
@@ -246,6 +352,7 @@ export function useFileOperations(services: Ref<AppServices | null>) {
     createFolder,
     renameItem,
     deleteItem,
+    duplicateItem,
     restoreItem,
     copyPath,
     undoableOperations

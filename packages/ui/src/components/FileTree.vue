@@ -1,5 +1,14 @@
 <template>
   <div class="file-tree-container theme-card flex flex-col h-full">
+    <!-- ARIA live region for operation announcements -->
+    <div 
+      aria-live="polite"
+      aria-atomic="true"
+      class="sr-only"
+      role="status"
+    >
+      {{ operationAnnouncement }}
+    </div>
     <!-- Header with search -->
     <div class="file-tree-header theme-header p-3 border-b flex-shrink-0">
       <div class="flex items-center justify-between">
@@ -88,10 +97,14 @@
                   :selected-id="selectedNodeId"
                   :expanded-paths="expandedPaths"
                   :search-query="searchQuery"
+                  :editing-node-id="editingNodeId"
                   @select="selectNode"
                   @toggle="toggleNode"
                   @open="openFile"
                   @contextmenu="handleContextMenu"
+                  @rename="handleRename"
+                  @move="handleMove"
+                  @copy="handleCopy"
                 />
               </div>
             </div>
@@ -107,10 +120,14 @@
             :selected-id="selectedNodeId"
             :expanded-paths="expandedPaths"
             :search-query="searchQuery"
+            :editing-node-id="editingNodeId"
             @select="selectNode"
             @toggle="toggleNode"
             @open="openFile"
             @contextmenu="handleContextMenu"
+            @rename="handleRename"
+            @move="handleMove"
+            @copy="handleCopy"
           />
         </template>
       </div>
@@ -214,11 +231,27 @@ const deleteItem = ref<TreeNodeType | null>(null)
 // Inline edit refs
 const editingNodeId = ref<string | null>(null)
 
+// ARIA announcements
+const operationAnnouncement = ref('')
+
 // Use loading from store
 const loading = computed(() => fileTreeStore.loading)
 
-// Virtual scrolling
-const VIRTUAL_SCROLL_THRESHOLD = 100
+// Virtual scrolling - configurable threshold
+const getVirtualScrollThreshold = () => {
+  // Check device performance
+  const memoryInfo = (navigator as any).deviceMemory
+  const hardwareConcurrency = navigator.hardwareConcurrency || 4
+  
+  // Lower threshold for lower-end devices
+  if (memoryInfo && memoryInfo <= 4) return 50 // Low memory devices
+  if (hardwareConcurrency <= 2) return 50 // Low CPU cores
+  
+  // Default threshold for normal devices
+  return 100
+}
+
+const VIRTUAL_SCROLL_THRESHOLD = getVirtualScrollThreshold()
 const NODE_HEIGHT = 28 // Height of each tree node in pixels
 
 // Computed
@@ -388,6 +421,46 @@ function handleKeyDown(event: KeyboardEvent) {
       event.preventDefault()
       startRename(node)
       break
+    case 'd':
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault()
+        if (node.type === 'file') {
+          handleDuplicate(node)
+        }
+      }
+      break
+    case 'n':
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault()
+        const parentNode = node.type === 'folder' ? node : findParentNode(filteredTree.value, node.id)
+        if (parentNode) {
+          newItemIsFolder.value = false
+          newItemParentPath.value = parentNode.path
+          showNewItemDialog.value = true
+        }
+      }
+      break
+    case 'N':
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault()
+        const parentNode = node.type === 'folder' ? node : findParentNode(filteredTree.value, node.id)
+        if (parentNode) {
+          newItemIsFolder.value = true
+          newItemParentPath.value = parentNode.path
+          showNewItemDialog.value = true
+        }
+      }
+      break
+    case 'z':
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault()
+        if (event.shiftKey) {
+          handleRedo()
+        } else {
+          handleUndo()
+        }
+      }
+      break
   }
 }
 
@@ -450,6 +523,13 @@ function handleContextMenu(event: MouseEvent, node: TreeNodeType) {
         icon: 'edit',
         action: () => startRename(node),
         shortcut: 'F2'
+      },
+      {
+        id: 'duplicate',
+        label: t('fileTree.duplicate'),
+        icon: 'copy',
+        action: () => handleDuplicate(node),
+        shortcut: 'Ctrl+D'
       },
       {
         id: 'delete',
@@ -527,8 +607,38 @@ function handleContextMenuAction(item: ContextMenuItem) {
 // File operations
 function startRename(node: TreeNodeType) {
   editingNodeId.value = node.id
-  // Implement inline editing in TreeNode component
-  toast.info('Rename functionality coming soon')
+}
+
+async function handleRename(nodeId: string, newName: string) {
+  const node = findNodeById(filteredTree.value, nodeId)
+  if (!node) return
+  
+  // Store original for rollback
+  const originalName = node.name
+  const originalPath = node.path
+  const newPath = node.path.replace(/[^/]+$/, newName)
+  
+  // Optimistic UI update
+  node.name = newName
+  node.path = newPath
+  editingNodeId.value = null
+  
+  try {
+    await fileOps.renameItem(originalPath, newName)
+    toast.success(t('fileTree.renameSuccess'))
+    // Announce to screen readers
+    operationAnnouncement.value = `File renamed to ${newName}`
+    // Refresh to ensure consistency
+    await loadTree()
+  } catch (error) {
+    console.error('Rename failed:', error)
+    // Rollback optimistic update
+    node.name = originalName
+    node.path = originalPath
+    toast.error(t('fileTree.renameError'))
+    // Announce error to screen readers
+    operationAnnouncement.value = 'File rename failed'
+  }
 }
 
 function handleDelete(node: TreeNodeType) {
@@ -539,12 +649,43 @@ function handleDelete(node: TreeNodeType) {
 async function handleDeleteConfirm() {
   if (!deleteItem.value) return
   
+  const itemToDelete = deleteItem.value
+  const parentPath = itemToDelete.path.substring(0, itemToDelete.path.lastIndexOf('/')) || '/'
+  
+  // Optimistic UI update - remove from tree immediately
+  const originalTree = JSON.parse(JSON.stringify(fileTreeStore.tree))
+  fileTreeStore.removeNodeOptimistically(itemToDelete.path)
+  
   try {
-    await fileOps.deleteItem(deleteItem.value.path)
+    await fileOps.deleteItem(itemToDelete.path)
     showDeleteDialog.value = false
     deleteItem.value = null
+    // Announce to screen readers
+    operationAnnouncement.value = `Deleted ${itemToDelete.name}`
+    // Refresh to ensure consistency
+    await fileTreeStore.refreshNode(parentPath)
   } catch (error) {
     console.error('Delete failed:', error)
+    // Rollback optimistic update
+    fileTreeStore.tree = originalTree
+    toast.error(t('fileTree.deleteError'))
+    // Announce error to screen readers
+    operationAnnouncement.value = 'Delete operation failed'
+  }
+}
+
+async function handleDuplicate(node: TreeNodeType) {
+  try {
+    await fileOps.duplicateItem(node.path)
+    toast.success(t('fileTree.duplicateSuccess'))
+    // Announce to screen readers
+    operationAnnouncement.value = `File duplicated: ${node.name}`
+    await loadTree()
+  } catch (error) {
+    console.error('Duplicate failed:', error)
+    toast.error(t('fileTree.duplicateError'))
+    // Announce error to screen readers
+    operationAnnouncement.value = 'Duplicate operation failed'
   }
 }
 
@@ -552,12 +693,106 @@ async function handleNewItem(name: string) {
   try {
     if (newItemIsFolder.value) {
       await fileOps.createFolder(newItemParentPath.value, name)
+      // Announce to screen readers
+      operationAnnouncement.value = `Folder created: ${name}`
     } else {
       await fileOps.createFile(newItemParentPath.value, name)
+      // Announce to screen readers
+      operationAnnouncement.value = `File created: ${name}`
     }
     showNewItemDialog.value = false
   } catch (error) {
     console.error('Create failed:', error)
+    // Announce error to screen readers
+    operationAnnouncement.value = 'Create operation failed'
+  }
+}
+
+async function handleMove(sourcePath: string, targetPath: string) {
+  try {
+    if (!services?.value) {
+      toast.error('Services not available')
+      return
+    }
+    
+    // Store tree state for rollback
+    const originalTree = JSON.parse(JSON.stringify(fileTreeStore.tree))
+    
+    // Optimistic UI update - move node in tree
+    const sourceNode = findNodeByPath(fileTreeStore.tree, sourcePath)
+    const targetFolder = findNodeByPath(fileTreeStore.tree, targetPath.substring(0, targetPath.lastIndexOf('/')))
+    
+    if (sourceNode && targetFolder && targetFolder.children) {
+      // Remove from original location
+      fileTreeStore.removeNodeOptimistically(sourcePath)
+      // Add to new location
+      const movedNode = { ...sourceNode, path: targetPath }
+      targetFolder.children.push(movedNode)
+      targetFolder.children.sort((a, b) => a.name.localeCompare(b.name))
+    }
+    
+    await services.value.fileOperationsService.move(sourcePath, targetPath)
+    toast.success(t('fileTree.moveSuccess'))
+    await loadTree()
+  } catch (error) {
+    console.error('Move failed:', error)
+    // Rollback optimistic update
+    fileTreeStore.tree = originalTree
+    toast.error(t('fileTree.moveError'))
+  }
+}
+
+async function handleCopy(sourcePath: string, targetPath: string) {
+  try {
+    if (!services?.value) {
+      toast.error('Services not available')
+      return
+    }
+    
+    await services.value.fileOperationsService.copy(sourcePath, targetPath)
+    toast.success(t('fileTree.copySuccess'))
+    await loadTree()
+  } catch (error) {
+    console.error('Copy failed:', error)
+    toast.error(t('fileTree.copyError'))
+  }
+}
+
+async function handleUndo() {
+  if (!services?.value?.undoRedoManager) {
+    return
+  }
+  
+  try {
+    const success = await services.value.undoRedoManager.undo()
+    if (success) {
+      toast.success(t('fileTree.undoSuccess'))
+      await loadTree()
+    } else {
+      toast.info(t('fileTree.nothingToUndo'))
+    }
+  } catch (error) {
+    console.error('Undo failed:', error)
+    toast.error(t('fileTree.undoError'))
+  }
+}
+
+async function handleRedo() {
+  if (!services?.value?.undoRedoManager) {
+    return
+  }
+  
+  try {
+    const success = await services.value.undoRedoManager.redo()
+    if (success) {
+      toast.success(t('fileTree.redoSuccess'))
+      await loadTree()
+    } else {
+      toast.info(t('fileTree.nothingToRedo'))
+    }
+  } catch (error) {
+    console.error('Redo failed:', error)
+    toast.error(t('fileTree.redoError'))
   }
 }
 
@@ -574,6 +809,17 @@ function findNodeByPath(nodes: TreeNodeType[], path: string): TreeNodeType | nul
     if (node.path === path) return node
     if (node.children) {
       const found = findNodeByPath(node.children, path)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function findParentNode(nodes: TreeNodeType[], childId: string, parent: TreeNodeType | null = null): TreeNodeType | null {
+  for (const node of nodes) {
+    if (node.id === childId) return parent
+    if (node.children) {
+      const found = findParentNode(node.children, childId, node)
       if (found) return found
     }
   }
@@ -606,6 +852,19 @@ onUnmounted(() => {
   height: 100%;
   min-height: 0;
   position: relative;
+}
+
+/* Screen reader only class for ARIA announcements */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .file-tree-content {

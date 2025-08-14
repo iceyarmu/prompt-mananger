@@ -1,15 +1,26 @@
 <template>
   <div
     class="tree-node"
-    :class="{ 'selected': isSelected }"
+    :class="{ 
+      'selected': isSelected,
+      'dragging': isDragging && draggedNode?.id === node.id,
+      'drop-target': isDropTarget
+    }"
     :style="{ paddingLeft: level * 16 + 'px' }"
     :data-node-id="node.id"
   >
     <div
       class="tree-node-content"
+      :draggable="!isEditing"
       @click="handleClick"
       @dblclick="handleDoubleClick"
       @contextmenu.prevent="handleContextMenu"
+      @dragstart="handleDragStart"
+      @dragend="handleDragEnd"
+      @dragover="handleDragOver"
+      @dragenter="handleDragEnter"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
       :title="node.path"
       :aria-expanded="node.type === 'folder' ? isExpanded : undefined"
       :aria-selected="isSelected"
@@ -47,13 +58,25 @@
         </svg>
       </span>
 
-      <!-- Node name with search highlighting -->
-      <span class="tree-node-name">
+      <!-- Node name with search highlighting or inline edit -->
+      <span v-if="isEditing" class="tree-node-name flex-1">
+        <input
+          ref="editInput"
+          v-model="editValue"
+          type="text"
+          class="inline-edit-input w-full px-1 py-0 text-sm border border-blue-500 rounded"
+          @keydown.enter="confirmRename"
+          @keydown.escape="cancelRename"
+          @blur="confirmRename"
+          @click.stop
+        />
+      </span>
+      <span v-else class="tree-node-name">
         <template v-if="searchQuery && highlightedName">
           <span v-html="highlightedName"></span>
         </template>
         <template v-else>
-          {{ node.name }}
+          {{ escapeHtml(node.name) }}
         </template>
       </span>
     </div>
@@ -68,17 +91,22 @@
         :selected-id="selectedId"
         :expanded-paths="expandedPaths"
         :search-query="searchQuery"
+        :editing-node-id="editingNodeId"
         @select="$emit('select', $event)"
         @toggle="$emit('toggle', $event)"
         @open="$emit('open', $event)"
         @contextmenu="$emit('contextmenu', $event)"
+        @rename="(nodeId, newName) => $emit('rename', nodeId, newName)"
+        @move="(source, target) => $emit('move', source, target)"
+        @copy="(source, target) => $emit('copy', source, target)"
       />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
+import { useDragAndDrop } from '../composables/useDragAndDrop'
 import type { TreeNode as TreeNodeType } from '../types/fileTree'
 
 // Props
@@ -88,6 +116,7 @@ const props = defineProps<{
   selectedId: string | null
   expandedPaths: Set<string>
   searchQuery: string
+  editingNodeId?: string | null
 }>()
 
 // Emits
@@ -96,11 +125,36 @@ const emit = defineEmits<{
   'toggle': [nodeId: string]
   'open': [nodeId: string]
   'contextmenu': [event: MouseEvent, node: TreeNodeType]
+  'rename': [nodeId: string, newName: string]
+  'move': [sourcePath: string, targetPath: string]
+  'copy': [sourcePath: string, targetPath: string]
 }>()
+
+// Refs
+const editInput = ref<HTMLInputElement>()
+const editValue = ref('')
+const isEditing = ref(false)
+
+// Drag and drop
+const dragAndDrop = useDragAndDrop()
+const { isDragging, draggedNode, isDropTarget: checkDropTarget } = dragAndDrop
 
 // Computed
 const isSelected = computed(() => props.node.id === props.selectedId)
 const isExpanded = computed(() => props.expandedPaths.has(props.node.path))
+const isDropTarget = computed(() => checkDropTarget(props.node.id))
+
+// Helper function to escape HTML entities
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }
+  return text.replace(/[&<>"']/g, (m) => map[m])
+}
 
 const highlightedName = computed(() => {
   if (!props.searchQuery) return null
@@ -112,9 +166,10 @@ const highlightedName = computed(() => {
   
   if (index === -1) return null
   
-  const before = name.substring(0, index)
-  const match = name.substring(index, index + query.length)
-  const after = name.substring(index + query.length)
+  // Escape HTML entities to prevent XSS
+  const before = escapeHtml(name.substring(0, index))
+  const match = escapeHtml(name.substring(index, index + query.length))
+  const after = escapeHtml(name.substring(index + query.length))
   
   return `${before}<mark class="bg-yellow-200 text-gray-900">${match}</mark>${after}`
 })
@@ -140,6 +195,104 @@ function toggleExpand() {
 function handleContextMenu(event: MouseEvent) {
   emit('select', props.node.id)
   emit('contextmenu', event, props.node)
+}
+
+// Rename functionality
+function startEdit() {
+  isEditing.value = true
+  editValue.value = props.node.name
+  nextTick(() => {
+    editInput.value?.focus()
+    editInput.value?.select()
+  })
+}
+
+function confirmRename() {
+  if (!isEditing.value) return
+  
+  const newName = editValue.value.trim()
+  if (newName && newName !== props.node.name) {
+    // Validate filename
+    if (validateFilename(newName)) {
+      emit('rename', props.node.id, newName)
+    }
+  }
+  cancelRename()
+}
+
+function cancelRename() {
+  isEditing.value = false
+  editValue.value = ''
+}
+
+function validateFilename(name: string): boolean {
+  // Basic filename validation
+  if (!name || name.length === 0) return false
+  if (name.length > 255) return false
+  
+  // Check for invalid characters
+  const invalidChars = /[<>:"|?*\x00-\x1f]/
+  if (invalidChars.test(name)) return false
+  
+  // Check for reserved names (Windows)
+  const reserved = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i
+  if (reserved.test(name)) return false
+  
+  return true
+}
+
+// Watch for external editing trigger
+watch(() => props.editingNodeId, (newId) => {
+  if (newId === props.node.id) {
+    startEdit()
+  } else if (isEditing.value) {
+    cancelRename()
+  }
+})
+
+// Drag and drop handlers
+function handleDragStart(event: DragEvent) {
+  if (isEditing.value) {
+    event.preventDefault()
+    return
+  }
+  dragAndDrop.startDrag(props.node, event)
+}
+
+function handleDragEnd() {
+  dragAndDrop.endDrag()
+}
+
+function handleDragOver(event: DragEvent) {
+  if (props.node.type === 'folder') {
+    dragAndDrop.handleDragOver(props.node, event)
+  }
+}
+
+function handleDragEnter(event: DragEvent) {
+  if (props.node.type === 'folder') {
+    dragAndDrop.handleDragEnter(props.node, event)
+  }
+}
+
+function handleDragLeave(event: DragEvent) {
+  if (props.node.type === 'folder') {
+    dragAndDrop.handleDragLeave(props.node, event)
+  }
+}
+
+function handleDrop(event: DragEvent) {
+  if (props.node.type === 'folder') {
+    const result = dragAndDrop.handleDrop(props.node, event)
+    if (result) {
+      const targetPath = `${props.node.path}/${result.source.name}`
+      if (result.operation === 'copy') {
+        emit('copy', result.source.path, targetPath)
+      } else {
+        emit('move', result.source.path, targetPath)
+      }
+    }
+  }
 }
 </script>
 
@@ -241,5 +394,43 @@ function handleContextMenu(event: MouseEvent) {
 .dark .tree-node-name :deep(mark) {
   background-color: #854d0e;
   color: #fef3c7;
+}
+
+/* Inline edit styling */
+.inline-edit-input {
+  background: white;
+  color: black;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.dark .inline-edit-input {
+  background: #1f2937;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.inline-edit-input:focus {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Drag and drop styling */
+.tree-node-content[draggable="true"] {
+  cursor: move;
+}
+
+.tree-node.dragging {
+  opacity: 0.5;
+}
+
+.tree-node.drop-target > .tree-node-content {
+  background-color: rgba(59, 130, 246, 0.2);
+  border: 1px dashed rgba(59, 130, 246, 0.5);
+  border-radius: 4px;
+}
+
+.dark .tree-node.drop-target > .tree-node-content {
+  background-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.6);
 }
 </style>
