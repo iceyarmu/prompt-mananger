@@ -18,54 +18,49 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { useWebDAVStore } from '../../stores/webdav'
+import { storeBus } from '../../stores/communication'
 
-export type ConnectionState = 'connected' | 'disconnected' | 'connecting' | 'error'
-
-const props = withDefaults(defineProps<{
-  state?: ConnectionState
-  message?: string
-  showReconnect?: boolean
-  autoReconnect?: boolean
-  reconnectDelay?: number
-}>(), {
-  state: 'disconnected',
-  showReconnect: true,
-  autoReconnect: true,
-  reconnectDelay: 5000
-})
-
-const emit = defineEmits<{
-  reconnect: []
-}>()
+const webdavStore = useWebDAVStore()
 
 const isReconnecting = ref(false)
 const reconnectAttempts = ref(0)
+const lastSyncTime = ref<Date | null>(null)
+const reconnectTimer = ref<number | null>(null)
+
+const connectionState = computed(() => webdavStore.connectionStatus)
+
+const showReconnect = computed(() => 
+  connectionState.value === 'disconnected' || connectionState.value === 'error'
+)
 
 const statusClass = computed(() => ({
-  'connection-status--connected': props.state === 'connected',
-  'connection-status--disconnected': props.state === 'disconnected',
-  'connection-status--connecting': props.state === 'connecting',
-  'connection-status--error': props.state === 'error'
+  'connection-status--connected': connectionState.value === 'connected',
+  'connection-status--disconnected': connectionState.value === 'disconnected',
+  'connection-status--connecting': connectionState.value === 'connecting',
+  'connection-status--error': connectionState.value === 'error'
 }))
 
 const indicatorClass = computed(() => ({
-  'status-indicator--connected': props.state === 'connected',
-  'status-indicator--disconnected': props.state === 'disconnected',
-  'status-indicator--connecting': props.state === 'connecting',
-  'status-indicator--error': props.state === 'error'
+  'status-indicator--connected': connectionState.value === 'connected',
+  'status-indicator--disconnected': connectionState.value === 'disconnected',
+  'status-indicator--connecting': connectionState.value === 'connecting',
+  'status-indicator--error': connectionState.value === 'error'
 }))
 
 const statusText = computed(() => {
-  if (props.message) return props.message
-
-  switch (props.state) {
+  switch (connectionState.value) {
     case 'connected':
-      return 'Connected'
+      return lastSyncTime.value 
+        ? `Connected • Last sync: ${formatTime(lastSyncTime.value)}`
+        : 'Connected'
     case 'connecting':
-      return 'Connecting...'
+      return isReconnecting.value 
+        ? `Reconnecting... (${reconnectAttempts.value})`
+        : 'Connecting...'
     case 'error':
-      return 'Connection Error'
+      return webdavStore.connectionError || 'Connection Error'
     case 'disconnected':
     default:
       return 'Disconnected'
@@ -73,39 +68,113 @@ const statusText = computed(() => {
 })
 
 const statusTooltip = computed(() => {
-  if (props.state === 'connected') {
-    return 'Connection is active'
-  } else if (props.state === 'connecting') {
+  if (connectionState.value === 'connected') {
+    const profile = webdavStore.activeProfile
+    return profile ? `Connected to ${profile.name} (${profile.url})` : 'Connection is active'
+  } else if (connectionState.value === 'connecting') {
     return 'Establishing connection...'
-  } else if (props.state === 'error') {
+  } else if (connectionState.value === 'error') {
     return `Connection error${reconnectAttempts.value > 0 ? ` (${reconnectAttempts.value} attempts)` : ''}`
   } else {
     return 'Connection is inactive'
   }
 })
 
+const formatTime = (date: Date) => {
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const seconds = Math.floor(diff / 1000)
+  
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
+
 const handleReconnect = async () => {
-  if (isReconnecting.value) return
+  if (isReconnecting.value || !webdavStore.activeProfile) return
 
   isReconnecting.value = true
   reconnectAttempts.value++
   
-  emit('reconnect')
-
-  // Simulate reconnection delay
-  setTimeout(() => {
+  try {
+    await webdavStore.connect(webdavStore.activeProfile.id)
+    
+    // Reset on successful connection
+    reconnectAttempts.value = 0
     isReconnecting.value = false
-  }, 2000)
+    
+    // Emit success event
+    storeBus.emit('webdav', 'connection-restored', {
+      profile: webdavStore.activeProfile,
+      attempts: reconnectAttempts.value
+    })
+  } catch (error) {
+    isReconnecting.value = false
+    
+    // Schedule retry if under max attempts
+    if (reconnectAttempts.value < webdavStore.maxRetries) {
+      reconnectTimer.value = window.setTimeout(() => {
+        handleReconnect()
+      }, 5000 * reconnectAttempts.value) // Exponential backoff
+    }
+    
+    // Emit error event
+    storeBus.emit('webdav', 'connection-failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      attempts: reconnectAttempts.value
+    })
+  }
 }
 
-// Auto-reconnect logic
-if (props.autoReconnect && props.state === 'disconnected') {
-  setTimeout(() => {
-    if (props.state === 'disconnected' && !isReconnecting.value) {
-      handleReconnect()
+// Watch for connection status changes
+watch(connectionState, (newState, oldState) => {
+  if (newState === 'connected') {
+    lastSyncTime.value = new Date()
+    reconnectAttempts.value = 0
+    
+    // Clear any pending reconnect timers
+    if (reconnectTimer.value) {
+      clearTimeout(reconnectTimer.value)
+      reconnectTimer.value = null
     }
-  }, props.reconnectDelay)
-}
+  } else if (newState === 'disconnected' && oldState === 'connected') {
+    // Auto-reconnect on unexpected disconnect
+    setTimeout(() => {
+      if (connectionState.value === 'disconnected' && !isReconnecting.value) {
+        handleReconnect()
+      }
+    }, 3000)
+  }
+})
+
+// Listen for sync events
+storeBus.on('webdav', 'file-synced', () => {
+  lastSyncTime.value = new Date()
+})
+
+// Update sync time periodically
+const updateTimer = setInterval(() => {
+  // Trigger reactivity to update time display
+  if (lastSyncTime.value) {
+    lastSyncTime.value = new Date(lastSyncTime.value)
+  }
+}, 60000) // Update every minute
+
+onMounted(() => {
+  // Load initial state
+  if (webdavStore.isConnected) {
+    lastSyncTime.value = new Date()
+  }
+})
+
+onUnmounted(() => {
+  // Cleanup timers
+  if (reconnectTimer.value) {
+    clearTimeout(reconnectTimer.value)
+  }
+  clearInterval(updateTimer)
+})
 </script>
 
 <style scoped>
@@ -143,7 +212,8 @@ if (props.autoReconnect && props.state === 'disconnected') {
 }
 
 .status-indicator--connecting {
-  @apply bg-yellow-500 animate-spin;
+  @apply bg-yellow-500;
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .status-indicator--error {

@@ -9,6 +9,7 @@ export const useFileTreeStore = defineStore('fileTree', () => {
   const searchQuery = ref('')
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const currentPath = ref<string>('/')
   
   const selectedPath = computed(() => selectedNode.value?.path || null)
   const hasSelection = computed(() => selectedNode.value !== null)
@@ -100,6 +101,41 @@ export const useFileTreeStore = defineStore('fileTree', () => {
   
   function selectNode(node: TreeNode | null) {
     selectedNode.value = node
+    if (node) {
+      // Update current path when a node is selected
+      if (node.type === 'directory') {
+        currentPath.value = node.path
+      } else {
+        // For files, use the parent directory path
+        const pathParts = node.path.split('/')
+        pathParts.pop()
+        currentPath.value = pathParts.join('/') || '/'
+      }
+    }
+  }
+  
+  function navigateToPath(path: string) {
+    currentPath.value = path
+    // Find and select the node if it exists in the tree
+    const node = findNodeByPath(path)
+    if (node) {
+      // Ensure all parent paths are expanded
+      const pathParts = path.split('/').filter(Boolean)
+      let buildPath = ''
+      for (const part of pathParts) {
+        buildPath += `/${part}`
+        expandPath(buildPath)
+      }
+      
+      // Select the directory node
+      if (node.type === 'directory') {
+        selectNode(node)
+        // Load directory contents if not already loaded
+        if (!node.children || node.children.length === 0) {
+          toggleNode(node)
+        }
+      }
+    }
   }
   
   function toggleNode(node: TreeNode) {
@@ -603,12 +639,14 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     searchQuery,
     loading,
     error,
+    currentPath,
     selectedPath,
     hasSelection,
     filteredTree,
     sortedTree,
     loadTree,
     selectNode,
+    navigateToPath,
     toggleNode,
     expandPath,
     collapsePath,

@@ -7,11 +7,17 @@
           @click="navigateTo(item)"
           class="breadcrumb-link"
           :aria-label="`Navigate to ${item.label}`"
+          :title="item.label.length > 20 ? item.label : undefined"
         >
-          {{ item.label }}
+          {{ truncateLabel(item.label) }}
         </button>
-        <span v-else class="breadcrumb-current" aria-current="page">
-          {{ item.label }}
+        <span 
+          v-else 
+          class="breadcrumb-current" 
+          aria-current="page"
+          :title="item.label.length > 20 ? item.label : undefined"
+        >
+          {{ truncateLabel(item.label) }}
         </span>
         <span v-if="index < breadcrumbItems.length - 1" class="breadcrumb-separator">
           /
@@ -22,7 +28,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import { useFileTreeStore } from '../../stores/fileTree'
+import { storeBus } from '../../stores/communication'
 
 export interface BreadcrumbItem {
   label: string
@@ -30,21 +38,16 @@ export interface BreadcrumbItem {
   data?: any
 }
 
-const props = defineProps<{
-  path: string
-  separator?: string
-}>()
-
-const emit = defineEmits<{
-  navigate: [item: BreadcrumbItem]
-}>()
+const fileTreeStore = useFileTreeStore()
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => {
-  if (!props.path || props.path === '/') {
+  const path = fileTreeStore.currentPath
+  
+  if (!path || path === '/') {
     return [{ label: 'Root', path: '/' }]
   }
 
-  const parts = props.path.split('/').filter(Boolean)
+  const parts = path.split('/').filter(Boolean)
   const items: BreadcrumbItem[] = [{ label: 'Root', path: '/' }]
 
   let currentPath = ''
@@ -60,8 +63,24 @@ const breadcrumbItems = computed<BreadcrumbItem[]>(() => {
 })
 
 const navigateTo = (item: BreadcrumbItem) => {
-  emit('navigate', item)
+  fileTreeStore.navigateToPath(item.path)
+  
+  // Emit navigation event through StoreCommunicationBus
+  storeBus.emit('filetree', 'navigate-to-path', item.path)
 }
+
+const truncateLabel = (label: string, maxLength: number = 20) => {
+  if (label.length <= maxLength) return label
+  
+  const start = Math.floor((maxLength - 3) / 2)
+  const end = Math.ceil((maxLength - 3) / 2)
+  return `${label.slice(0, start)}...${label.slice(-end)}`
+}
+
+// Listen for navigation events from other components
+storeBus.on('filetree', 'path-changed', (path: string) => {
+  // Path is automatically synced through the store's currentPath
+})
 </script>
 
 <style scoped>
