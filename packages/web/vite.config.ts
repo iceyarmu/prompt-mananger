@@ -86,7 +86,7 @@ export default defineConfig(({ mode }) => {
           },
           output: {
             manualChunks: {
-              'vue-vendor': ['vue', 'vue-router', 'pinia'],
+              'vue-vendor': ['vue', 'pinia'],
               'ui-vendor': ['element-plus'],
               'utils': ['lodash-es', 'dayjs']
             }
@@ -96,7 +96,7 @@ export default defineConfig(({ mode }) => {
         reportCompressedSize: false
       },
       optimizeDeps: {
-        include: ['element-plus', 'vue', 'vue-router', 'pinia'],
+        include: ['element-plus', 'vue', 'pinia'],
       }
     }
   }

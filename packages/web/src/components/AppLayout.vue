@@ -103,7 +103,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { usePreferencesStore } from '@/stores/preferences'
+import { usePreferenceStore } from '@/stores/preferences'
 import { debounce } from '@/utils/debounce'
 
 // Props and Emits
@@ -122,7 +122,7 @@ const emit = defineEmits<{
 }>()
 
 // Store
-const preferencesStore = usePreferencesStore()
+const preferencesStore = usePreferenceStore()
 
 // Constants
 const MIN_LEFT_WIDTH = props.minLeftWidth ?? 200

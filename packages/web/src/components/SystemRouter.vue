@@ -39,9 +39,24 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent, shallowRef } from 'vue';
-import { useFeatureFlags } from '@prompt-optimizer/ui/services/FeatureFlagService';
 import { useStoreCommunication } from '../stores/communication';
 import type { Component } from 'vue';
+
+// Simple feature flag implementation
+const useFeatureFlags = () => {
+  const flags = ref<Record<string, boolean>>({
+    new_platform_enabled: false
+  });
+  
+  return {
+    isEnabled: (flag: string) => flags.value[flag] || false,
+    onFlagChange: (flag: string, callback: (enabled: boolean) => void) => {
+      // Simple stub implementation
+      watch(() => flags.value[flag], callback);
+      return () => {}; // unsubscribe function
+    }
+  };
+};
 
 interface Props {
   componentName: string;

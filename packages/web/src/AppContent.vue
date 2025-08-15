@@ -211,10 +211,10 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import AppLayout from './components/AppLayout.vue'
 import { BreadcrumbNav, ConnectionStatus, type BreadcrumbItem, type ConnectionState } from './components/navigation'
 import { 
-  FileTree, 
-  MarkdownEditor,
+  FileTreeUI as FileTree, 
+  MarkdownEditorUI as MarkdownEditor,
   ThemeToggleUI,
-  Toast
+  ToastUI as Toast
 } from '@prompt-optimizer/ui'
 import { useFileTreeStore } from './stores/fileTree'
 import { useEditorStore } from './stores/editor'
@@ -224,7 +224,7 @@ import { useAppStore } from './stores/app'
 import { useWebDAVStore } from './stores/webdav'
 import { usePreferenceStore } from './stores/preferences'
 import { useStoreCommunication } from './stores/communication'
-import { ServiceRegistry } from './services/ServiceRegistry'
+// import { ServiceRegistry } from './services/ServiceRegistry'
 import { useKeyboardShortcuts } from './utils/KeyboardShortcuts'
 
 // Stores
@@ -238,7 +238,14 @@ const preferenceStore = usePreferenceStore()
 const { subscribe, emit, cleanup } = useStoreCommunication()
 
 // Services
-const services = ServiceRegistry.getInstance()
+// TODO: Fix ServiceRegistry implementation
+const services = {
+  getService: (name: string) => {
+    // Mock service implementation
+    console.warn(`Service ${name} requested but not implemented`)
+    return null
+  }
+}
 
 // Keyboard shortcuts
 const { register, setContext } = useKeyboardShortcuts()
