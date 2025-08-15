@@ -86,14 +86,27 @@ export class EditorService {
     logger.debug('Initializing EditorService')
     
     try {
-      // Load preferences
-      const preferences = await this.preferenceService.getPreferences()
+      // Load preferences - use getAll() method instead of non-existent getPreferences()
+      const allPreferences = await this.preferenceService.getAll()
       
-      // Apply editor preferences
-      if (preferences.editor) {
+      // Extract editor preferences from the flat key-value structure
+      const editorPrefs: any = {}
+      for (const [key, value] of Object.entries(allPreferences)) {
+        if (key.startsWith('editor.')) {
+          const editorKey = key.replace('editor.', '')
+          try {
+            editorPrefs[editorKey] = JSON.parse(value)
+          } catch {
+            editorPrefs[editorKey] = value
+          }
+        }
+      }
+      
+      // Apply editor preferences if any exist
+      if (Object.keys(editorPrefs).length > 0) {
         this.config = {
           ...this.config,
-          ...preferences.editor
+          ...editorPrefs
         }
         logger.info('Editor preferences loaded', this.config)
       }
@@ -360,8 +373,8 @@ export class EditorService {
    */
   async checkHealth(): Promise<boolean> {
     try {
-      // Check if we can access preferences
-      await this.preferenceService.getPreferences()
+      // Check if we can access preferences - use getAll() instead of non-existent getPreferences()
+      await this.preferenceService.getAll()
       
       // Check if file operations are available
       await this.fileOperationsService.checkHealth()

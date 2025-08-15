@@ -63,9 +63,9 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
   try {
     // 1. Initialize StorageService (foundational)
     logger.debug('Initializing StorageService...')
-    const storageProvider = new DexieStorageProvider()
+    const storageService = StorageFactory.create('dexie')
+    const storageProvider = storageService as DexieStorageProvider
     await storageProvider.initialize()
-    const storageService = StorageFactory.create(storageProvider)
     logger.info('StorageService initialized')
     
     // 2. Initialize PreferenceService (loads configuration)
@@ -74,9 +74,7 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
       ? new ElectronPreferenceServiceProxy()
       : new PreferenceService(storageService)
     
-    if (!isElectron) {
-      await preferenceService.init()
-    }
+    // PreferenceService doesn't have an init method - it's initialized via constructor
     logger.info('PreferenceService initialized')
     
     // 3. Initialize WebDAVService (if configured)
@@ -122,20 +120,36 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
       ? new ElectronTemplateManagerProxy()
       : new TemplateManager(storageService)
     
-    if (!isElectron) {
-      await templateService.init()
-    }
+    // TemplateManager doesn't have an init method - it's initialized via constructor
     logger.info('TemplateService initialized')
     
-    // 8. Initialize OptimizationService (PromptService)
+    // Note: We need to initialize ExecutionService (LLMService) before OptimizationService
+    // because PromptService depends on LLMService
+    
+    // 8. Initialize ExecutionService (LLMService) - moved before OptimizationService
+    logger.debug('Initializing ExecutionService...')
+    const executionService = isElectron
+      ? new ElectronLLMProxy()
+      : new LLMService(modelService, preferenceService)
+    logger.info('ExecutionService initialized')
+    
+    // 9. Initialize HistoryService - moved before OptimizationService
+    logger.debug('Initializing HistoryService...')
+    const historyService = isElectron
+      ? new ElectronHistoryManagerProxy()
+      : new HistoryManager(storageService, modelService)
+    // HistoryManager doesn't have an init method - it's initialized via constructor
+    logger.info('HistoryService initialized')
+    
+    // 10. Initialize OptimizationService (PromptService) - now with correct dependencies
     logger.debug('Initializing OptimizationService...')
     const optimizationService = isElectron
       ? new ElectronPromptServiceProxy()
       : new PromptService(
-          modelService,
-          templateService,
-          preferenceService,
-          storageService
+          modelService,      // IModelManager
+          executionService,  // ILLMService
+          templateService,   // ITemplateManager
+          historyService     // IHistoryManager
         )
     logger.info('OptimizationService initialized')
     
@@ -145,36 +159,16 @@ export async function initializeServices(config: ApplicationConfig): Promise<Ser
     await editorOptimizationBridge.init()
     logger.info('EditorOptimizationBridge initialized')
     
-    // 10. Initialize ExecutionService (LLMService)
-    logger.debug('Initializing ExecutionService...')
-    const executionService = isElectron
-      ? new ElectronLLMProxy()
-      : new LLMService(modelService, preferenceService)
-    logger.info('ExecutionService initialized')
-    
-    // 11. Initialize HistoryService
-    logger.debug('Initializing HistoryService...')
-    const historyService = isElectron
-      ? new ElectronHistoryManagerProxy()
-      : new HistoryManager(storageService)
-    
-    if (!isElectron) {
-      await historyService.init()
-    }
-    logger.info('HistoryService initialized')
-    
-    // 12. Initialize DataService
+    // 11. Initialize DataService
     logger.debug('Initializing DataService...')
     const dataService = isElectron
       ? new ElectronDataManagerProxy()
       : new DataManager(storageService)
     
-    if (!isElectron) {
-      await dataService.init()
-    }
+    // DataManager doesn't have an init method - it's initialized via constructor
     logger.info('DataService initialized')
     
-    // 13. Initialize CompareService
+    // 12. Initialize CompareService
     logger.debug('Initializing CompareService...')
     const compareService = new CompareService()
     logger.info('CompareService initialized')
@@ -225,8 +219,8 @@ async function performHealthChecks(registry: ServiceRegistry): Promise<ServiceHe
   
   // Check StorageService
   try {
-    // Basic check - try to access storage
-    await registry.storageService.get('health_check_test')
+    // Basic check - try to access storage using getItem method
+    await registry.storageService.getItem('health_check_test')
     checks.push({
       service: 'StorageService',
       healthy: true
@@ -242,8 +236,8 @@ async function performHealthChecks(registry: ServiceRegistry): Promise<ServiceHe
   
   // Check PreferenceService
   try {
-    // Check if preferences can be accessed
-    const prefs = await registry.preferenceService.getPreferences()
+    // Check if preferences can be accessed - use getAll() instead of non-existent getPreferences()
+    const prefs = await registry.preferenceService.getAll()
     checks.push({
       service: 'PreferenceService',
       healthy: true
@@ -259,7 +253,7 @@ async function performHealthChecks(registry: ServiceRegistry): Promise<ServiceHe
   
   // Check ModelService
   try {
-    const models = await registry.modelService.getInstalledModels()
+    const models = await registry.modelService.getAllModels()
     checks.push({
       service: 'ModelService',
       healthy: true,
@@ -276,7 +270,7 @@ async function performHealthChecks(registry: ServiceRegistry): Promise<ServiceHe
   
   // Check TemplateService
   try {
-    const templates = await registry.templateService.getTemplates()
+    const templates = await registry.templateService.listTemplates()
     checks.push({
       service: 'TemplateService',
       healthy: true,
@@ -293,7 +287,7 @@ async function performHealthChecks(registry: ServiceRegistry): Promise<ServiceHe
   
   // Check HistoryService
   try {
-    const history = await registry.historyService.getHistory()
+    const history = await registry.historyService.getRecords()
     checks.push({
       service: 'HistoryService',
       healthy: true,

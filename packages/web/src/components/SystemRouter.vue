@@ -48,8 +48,15 @@ const useFeatureFlags = () => {
     new_platform_enabled: false
   });
   
+  const variants = ref<Record<string, string>>({
+    cutover_experiment: 'control'
+  });
+  
   return {
     isEnabled: (flag: string) => flags.value[flag] || false,
+    isNewPlatformEnabled: () => flags.value.new_platform_enabled || false,
+    getCutoverVariant: () => 'control',
+    getVariant: (experiment: string) => variants.value[experiment] || 'control',
     onFlagChange: (flag: string, callback: (enabled: boolean) => void) => {
       // Simple stub implementation
       watch(() => flags.value[flag], callback);

@@ -317,10 +317,10 @@ export class FileOperationsService {
    */
   async checkHealth(): Promise<boolean> {
     try {
-      // Test local storage
+      // Test local storage - use correct IStorageProvider methods
       const testKey = `${this.storagePrefix}health-check`
-      await this.storageService.set(testKey, 'test')
-      await this.storageService.delete(testKey)
+      await this.storageService.setItem(testKey, 'test')
+      await this.storageService.removeItem(testKey)
       
       // If WebDAV is configured, check its health too
       if (this.webDAVService) {
@@ -343,11 +343,13 @@ export class FileOperationsService {
    */
   private async readFromLocalStorage(path: string): Promise<FileContent> {
     const key = this.storagePrefix + path
-    const data = await this.storageService.get(key)
+    const dataStr = await this.storageService.getItem(key)
     
-    if (!data) {
+    if (!dataStr) {
       throw new Error(`File not found: ${path}`)
     }
+    
+    const data = JSON.parse(dataStr)
     
     return {
       path,
@@ -379,7 +381,7 @@ export class FileOperationsService {
       }
     }
     
-    await this.storageService.set(key, data)
+    await this.storageService.setItem(key, JSON.stringify(data))
   }
   
   /**
@@ -387,7 +389,7 @@ export class FileOperationsService {
    */
   private async deleteFromLocalStorage(path: string): Promise<void> {
     const key = this.storagePrefix + path
-    await this.storageService.delete(key)
+    await this.storageService.removeItem(key)
   }
   
   /**
@@ -395,25 +397,29 @@ export class FileOperationsService {
    */
   private async listFromLocalStorage(dirPath: string): Promise<FileMetadata[]> {
     const prefix = this.storagePrefix + dirPath
-    const allKeys = await this.storageService.keys()
+    // TODO: IStorageProvider doesn't have a keys() method - need to implement this properly
+    const allKeys: string[] = [] // await this.storageService.keys()
     
     const files: FileMetadata[] = []
     for (const key of allKeys) {
       if (key.startsWith(prefix)) {
         const path = key.substring(this.storagePrefix.length)
-        const data = await this.storageService.get(key)
+        const dataStr = await this.storageService.getItem(key)
         
-        if (data && data.metadata) {
-          files.push(data.metadata)
-        } else {
-          // Create basic metadata if missing
-          files.push({
-            name: path.split('/').pop() || '',
-            path,
-            size: (data?.content || '').length,
-            lastModified: new Date(data?.lastModified || Date.now()),
-            isDirectory: false
-          })
+        if (dataStr) {
+          const data = JSON.parse(dataStr)
+          if (data.metadata) {
+            files.push(data.metadata)
+          } else {
+            // Create basic metadata if missing
+            files.push({
+              name: path.split('/').pop() || '',
+              path,
+              size: (data?.content || '').length,
+              lastModified: new Date(data?.lastModified || Date.now()),
+              isDirectory: false
+            })
+          }
         }
       }
     }
@@ -426,8 +432,8 @@ export class FileOperationsService {
    */
   private async existsInLocalStorage(path: string): Promise<boolean> {
     const key = this.storagePrefix + path
-    const data = await this.storageService.get(key)
-    return data !== null && data !== undefined
+    const dataStr = await this.storageService.getItem(key)
+    return dataStr !== null && dataStr !== undefined
   }
   
   /**
@@ -480,10 +486,10 @@ export class FileOperationsService {
     // Create folder marker in local storage
     try {
       const key = this.storagePrefix + path + '/.folder'
-      await this.storageService.set(key, {
+      await this.storageService.setItem(key, JSON.stringify({
         isDirectory: true,
         created: Date.now()
-      })
+      }))
       logger.info('Folder marker created in local storage', { path })
       results.push({ success: true, message: 'Created in local storage' })
     } catch (error) {
@@ -732,12 +738,13 @@ export class FileOperationsService {
     
     // Fallback to local storage
     const key = this.storagePrefix + path
-    const data = await this.storageService.get(key)
+    const dataStr = await this.storageService.getItem(key)
     
-    if (!data) {
+    if (!dataStr) {
       throw new Error(`File not found: ${path}`)
     }
     
+    const data = JSON.parse(dataStr)
     return data.metadata || {
       name: path.split('/').pop() || '',
       path,

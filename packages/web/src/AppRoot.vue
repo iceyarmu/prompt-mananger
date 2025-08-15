@@ -143,9 +143,9 @@ onMounted(async () => {
       }
     }
     
-    // Load user preferences
+    // Preferences are already loaded during service initialization
     initializationStatus.value = 'Loading preferences...'
-    await services.preferenceService.loadPreferences()
+    // PreferenceService loads preferences in its constructor, no need to call loadPreferences()
     
     // Application ready
     initializationStatus.value = 'Ready'

@@ -246,11 +246,12 @@ export class EditorOptimizationBridge {
     try {
       // Check if services are accessible
       const editorContent = this.editorService.getContentForOptimization()
-      const templates = await this.optimizationService.getTemplates()
+      // PromptService doesn't have getTemplates method - just check if service is accessible
+      const history = await this.optimizationService.getHistory()
       
       logger.debug('Bridge health check passed', {
         hasEditor: editorContent !== undefined,
-        templateCount: templates.length
+        canAccessHistory: history !== undefined
       })
       
       return true
